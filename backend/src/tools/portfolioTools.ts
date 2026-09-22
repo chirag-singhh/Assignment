@@ -1,7 +1,7 @@
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
 import { addProperty, findMatchingProperties, getUserPortfolio, getUserProperties, propertyChanges, propertyInput, updateProperty } from "../services/propertyService.js";
-import { comparePropertyTypes, getHighestRentProperty, getPortfolioSummary } from "../services/portfolioService.js";
+import { comparePropertyTypes, getHighestRentProperty, getPortfolioSummary, ownedRent, ownedValue } from "../services/portfolioService.js";
 import { excludePropertyScenario } from "../services/scenarioService.js";
 
 type Context = {
@@ -34,7 +34,7 @@ export function createPortfolioTools(context: Context) {
       user: await getUserPortfolio(context.userId),
       summary: getPortfolioSummary(await getUserProperties(context.userId)),
     })),
-    wrapped(context, "search_properties", "Search the user's actual properties. Use this for retail, office, city, value threshold or identifying a property before an update.", z.object({
+    wrapped(context, "search_properties", "Search the user's actual properties and compare their owned value, annual rent and gross rental yield. Use for type, city, value threshold or identifying a property before an update.", z.object({
       propertyType: z.string().optional(),
       location: z.string().optional(),
       minValueInr: z.number().nonnegative().optional(),
@@ -44,7 +44,7 @@ export function createPortfolioTools(context: Context) {
       (!filter.location || p.location.toLowerCase().includes(filter.location.toLowerCase())) &&
       (filter.minValueInr === undefined || p.currentEstimatedValueInr > filter.minValueInr) &&
       (filter.maxValueInr === undefined || p.currentEstimatedValueInr < filter.maxValueInr)
-    )),
+    ).map((p) => ({ ...p, ownedValueInr: ownedValue(p), ownedAnnualRentInr: ownedRent(p), grossYieldPercent: ownedValue(p) ? ownedRent(p) / ownedValue(p) * 100 : null }))),
     wrapped(context, "compare_property_types", "Compare actual residential and commercial value, annual rent and gross yield.", z.object({}), async () => comparePropertyTypes(await getUserProperties(context.userId))),
     wrapped(context, "get_highest_rent_property", "Find the user's property with the highest annual rent.", z.object({}), async () => getHighestRentProperty(await getUserProperties(context.userId))),
     wrapped(context, "add_property", "Create a property only after the user explicitly requests it. Do not ask the user for an internal ID. Ask for missing type, location or estimated value.", propertyInput, async (input) => addProperty(context.userId, input)),
