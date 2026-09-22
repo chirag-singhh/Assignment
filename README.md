@@ -2,7 +2,7 @@
 
 A conversational analyst for the synthetic real estate portfolios supplied with the assignment. A user can ask about holdings, compare properties, add or update a property, and explore a hypothetical change. A separate business dashboard shows conversations and agent activity.
 
-This guide starts with basic setup and then explains the code, data flow, calculations, API, testing, operations, and production considerations. **The steps below use PostgreSQL directly; Docker is not required.**
+This guide starts with basic setup and then explains the code, data flow, calculations, API, testing, operations, and production considerations. **The steps below use Supabase PostgreSQL; Docker is not required.**
 
 ## Contents
 
@@ -111,21 +111,21 @@ erDiagram
 ### 1. Install prerequisites
 
 - Node.js **20 or newer** and npm.
-- A running **PostgreSQL** server that you installed locally, or a managed PostgreSQL database you control. PostgreSQL 16 is a suitable local choice.
+- A Supabase project with its database password and the two pooler URLs from the project's **Connect** panel.
 - An OpenRouter account, API key, and access/credits for the model selected in `.env`.
 
-On Windows, PostgreSQL's installer commonly includes pgAdmin. You can use pgAdmin's Query Tool for the SQL below, so adding `psql` to `PATH` is optional. Confirm the database server is running before continuing.
+You do not need to install PostgreSQL or Docker locally. Supabase hosts the database. Use a dedicated or empty Supabase project for the assignment so its migration only manages this app's tables.
 
-### 2. Create an empty database
+### 2. Copy the two Supabase connection strings
 
-Connect to PostgreSQL as an administrator in pgAdmin and execute this example SQL once:
+In Supabase, open the project's **Connect** panel and copy:
 
-```sql
-CREATE ROLE portfolio WITH LOGIN PASSWORD 'choose-a-strong-local-password';
-CREATE DATABASE portfolio OWNER portfolio;
-```
+1. The **Transaction pooler** URL (port `6543`) for normal API and seed queries. Keep `pgbouncer=true` in its query parameters.
+2. The **Session pooler** URL (port `5432`) for Prisma migrations. This is named `DIRECT_URL` in this project even though it uses Supabase's session pooler rather than a direct IPv6 database address.
 
-If a role or database already exists, use its credentials instead of creating duplicates. For a managed database, create a database and user through that provider's console. The application needs a PostgreSQL connection that can create tables during migration and read/write its own data afterward.
+The shared pooler username includes your project reference, such as `postgres.PROJECT_REF`. Copy the host and username from Supabase rather than guessing them. Replace `[YOUR-PASSWORD]` in **both** URLs with the actual database password. If that password contains `@`, `:`, `/`, `?`, `#`, or other reserved URL characters, URL-encode it first. Leaving the literal `[YOUR-PASSWORD]` produces an authentication failure.
+
+This split follows [Supabase's connection modes](https://supabase.com/docs/guides/database/connecting-to-postgres) and [Prisma's pooled-runtime/migration configuration](https://docs.prisma.io/docs/orm/reference/prisma-config-reference). With this project's Prisma 6 schema, `url` is used by Prisma Client and `directUrl` is used by migration commands.
 
 ### 3. Configure the environment
 
@@ -138,7 +138,8 @@ Copy-Item .env.example .env
 Set the values to your database and model account. Example **with placeholders**:
 
 ```dotenv
-DATABASE_URL=postgresql://portfolio:choose-a-strong-local-password@localhost:5432/portfolio?schema=public
+DATABASE_URL="postgresql://postgres.PROJECT_REF:YOUR_PASSWORD@POOLER_HOST:6543/postgres?pgbouncer=true&sslmode=require"
+DIRECT_URL="postgresql://postgres.PROJECT_REF:YOUR_PASSWORD@POOLER_HOST:5432/postgres?sslmode=require"
 OPENROUTER_API_KEY=your-key-here
 OPENROUTER_MODEL=openai/gpt-4o-mini
 PORT=5000
@@ -148,7 +149,8 @@ VITE_API_BASE_URL=http://localhost:5000
 
 | Variable | Used by | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL` | Prisma/backend | PostgreSQL host, database, user, and password. URL-encode special characters in the password. |
+| `DATABASE_URL` | Prisma/backend | Supabase transaction pooler for runtime queries and the seed script. |
+| `DIRECT_URL` | Prisma Migrate | Supabase session pooler for schema migrations. |
 | `OPENROUTER_API_KEY` | Backend only | Authenticates model requests. Keep it in `.env`, never in frontend code or `.env.example`. |
 | `OPENROUTER_MODEL` | Backend only | Model name sent through OpenRouter. It must support tool calling. |
 | `PORT` | Backend | API port; defaults to `5000`. |
@@ -172,7 +174,7 @@ What each command does:
 
 1. `npm install` installs the backend and frontend packages defined by the npm workspaces.
 2. `db:generate` generates the Prisma Client from the schema. It does not create tables.
-3. `db:migrate` runs the committed SQL migration against the database in `DATABASE_URL`.
+3. `db:migrate` runs the committed SQL migration through `DIRECT_URL` against your Supabase project.
 4. `db:seed` imports the bundled CSVs from `dataset/`. It upserts seed rows by ID, so rerunning it does not duplicate them. It can reset changes to those original seed rows; use a fresh database for repeatable demos.
 
 ### 5. Start the app
@@ -269,6 +271,7 @@ The read tools query current database records. The `run_portfolio_scenario` tool
 | `backend/src/utils/errors.ts` | Safe HTTP error responses and server-side error logging. |
 | `backend/src/types.ts` | TypeScript property shape used in calculations. |
 | `backend/prisma/schema.prisma` | Models, relationships, field types, and indexes. |
+| `backend/prisma.config.ts` | Loads the root `.env` for Prisma CLI commands run from `backend/`. |
 | `backend/prisma/migrations/` | Committed SQL migration that creates the tables. |
 | `backend/prisma/seed.ts` | Imports the CSV data into PostgreSQL. |
 
@@ -355,10 +358,12 @@ The script reports each request time, median, and maximum. The API logs each mod
 
 | Symptom | Check |
 | --- | --- |
-| `Can't reach database server` or Prisma initialization error | PostgreSQL is running; `DATABASE_URL` host, port, username, password, and database name are correct; firewall allows the connection. |
+| `Can't reach database server` or Prisma initialization error | Check the Supabase project state, the exact pooler host, port `6543`, username, password, and network access. |
+| `Authentication failed` | Replace the literal `[YOUR-PASSWORD]` in **both** URLs with the real Supabase database password; URL-encode special characters. |
 | No users in the chat selector | Run `npm run db:migrate` and `npm run db:seed`; check `GET /api/admin/users`. |
-| Migration fails | The database user needs schema creation permissions; confirm `DATABASE_URL` points to the intended database. |
+| Migration fails | Confirm `DIRECT_URL` uses the session pooler on port `5432`, the correct password, and the intended project. |
 | `Prisma Client` missing | Run `npm install` and `npm run db:generate`. |
+| `db:generate` reports `EPERM` on `query_engine-windows.dll.node` | Stop the running backend on Windows, rerun `npm run db:generate`, then restart `npm run dev`; the running process may hold the engine file open. |
 | Browser says `Failed to fetch` | Confirm the API is running on `PORT`, `VITE_API_BASE_URL` points to it, and `CORS_ORIGIN` matches the frontend origin. |
 | OpenRouter returns HTTP 402 | The gateway declined the request for payment/credits. Check account balance, model access, and the configured model. |
 | AI says it is not configured | Check that `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` are set in the root `.env`, then restart the backend. |
