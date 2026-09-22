@@ -6,7 +6,7 @@ The API logs `model_call` for every OpenRouter round trip and `chat_request` for
 
 Start the database, seed it and run the app with a valid OpenRouter key. Then run `node scripts/benchmark.mjs U001`. The script sends three read-only questions in one conversation and reports every end-to-end time, median and maximum. Inspect API JSON logs with that conversation ID for model calls; inspect the business dashboard for tool times. Repeat the script several times to account for model and network variability. First calls may include connection warm-up.
 
-**Measured typical latency:** pending a configured OpenRouter key and running PostgreSQL service in the target environment. This checkout has neither, so presenting a number as measured would be misleading. The benchmark is included so the final submission can record actual median and range before the walkthrough.
+**Measured typical latency:** no successful live measurement is recorded yet. A reachable PostgreSQL service and a successful OpenRouter request are required before reporting a real median and range. Run the benchmark in the target environment before the walkthrough; do not present an estimate as a measurement.
 
 ## Where time is spent and how it is controlled
 
