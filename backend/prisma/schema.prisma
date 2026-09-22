@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id String @id
+  name String
+  city String?
+  statedPreferences Json?
+  preferredLocations Json?
+  portfolioValuePreference String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  properties Property[]
+  conversations Conversation[]
+}
+
+model Property {
+  id String @id @default(cuid())
+  userId String
+  propertyType String
+  subType String?
+  location String
+  areaSqft Decimal? @db.Decimal(14, 2)
+  currentEstimatedValueInr Decimal @db.Decimal(18, 2)
+  purchasePriceInr Decimal? @db.Decimal(18, 2)
+  annualRentInr Decimal? @db.Decimal(18, 2)
+  occupancyStatus String?
+  tenantStatus String?
+  ownershipPercent Decimal? @db.Decimal(5, 2)
+  status String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([location])
+}
+
+model Conversation {
+  id String @id @default(cuid())
+  userId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+  toolLogs ToolLog[]
+  @@index([userId, updatedAt])
+}
+
+model Message {
+  id String @id @default(cuid())
+  conversationId String
+  role String
+  content String
+  createdAt DateTime @default(now())
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  @@index([conversationId, createdAt])
+}
+
+model ToolLog {
+  id String @id @default(cuid())
+  conversationId String
+  toolName String
+  input Json
+  output Json
+  executionTimeMs Int
+  createdAt DateTime @default(now())
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  @@index([conversationId, createdAt])
+}
