@@ -105,15 +105,15 @@ export async function executeFastAction(userId: string, message: string): Promis
     const property = await updateProperty(userId, propertyId, action.changes);
     if (!property) return { toolName: "update_property", input: action, output: { error: "No property in this user's portfolio matches." }, answer: "No property was changed because that property is not in this user's portfolio." };
     const changed = action.changes.currentEstimatedValueInr !== undefined ? `Estimated value: ${formatMoney(property.currentEstimatedValueInr)}.` : action.changes.annualRentInr !== undefined ? `Annual rent: ${formatMoney(property.annualRentInr ?? 0)}.` : action.changes.ownershipPercent !== undefined ? `Ownership: ${property.ownershipPercent}%.` : `Occupancy: ${property.occupancyStatus}.`;
-    return { toolName: "update_property", input: action, output: property, answer: `Updated ${property.location} (${property.id}). ${changed}` };
+    return { toolName: "update_property", input: action, output: property, answer: `Updated ${property.location}. ${changed}` };
   }
   const matches = await findMatchingProperties(userId, action.propertyQuery);
   if (matches.length !== 1) {
     const output = { error: matches.length ? "Multiple properties match." : "No property in this user's portfolio matches.", matches: matches.map((property) => ({ id: property.id, location: property.location })) };
-    return { toolName: "update_property", input: action, output, answer: matches.length ? `No property was changed because ${matches.length} properties matched. Please use a property ID or a more specific location.` : "No property was changed because that property is not in this user's portfolio." };
+    return { toolName: "update_property", input: action, output, answer: matches.length ? `No property was changed because ${matches.length} properties matched. Please provide a more specific location or property description.` : "No property was changed because that property is not in this user's portfolio." };
   }
   const property = await updateProperty(userId, matches[0].id, action.changes);
   if (!property) return { toolName: "update_property", input: action, output: { error: "Property no longer exists." }, answer: "No property was changed because it could not be found." };
   const changed = action.changes.currentEstimatedValueInr !== undefined ? `Estimated value: ${formatMoney(property.currentEstimatedValueInr)}.` : action.changes.annualRentInr !== undefined ? `Annual rent: ${formatMoney(property.annualRentInr ?? 0)}.` : action.changes.ownershipPercent !== undefined ? `Ownership: ${property.ownershipPercent}%.` : `Occupancy: ${property.occupancyStatus}.`;
-  return { toolName: "update_property", input: action, output: property, answer: `Updated ${property.location} (${property.id}). ${changed}` };
+  return { toolName: "update_property", input: action, output: property, answer: `Updated ${property.location}. ${changed}` };
 }

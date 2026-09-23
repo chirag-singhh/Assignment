@@ -26,7 +26,6 @@ function completePortfolio(properties: PortfolioProperty[]) {
     const ownership = property.ownershipPercent ?? 100;
     return [
       `### ${index + 1}. ${property.location}`,
-      `- Property ID: ${property.id}`,
       `- Type: ${property.propertyType}${property.subType ? ` — ${property.subType}` : ""}`,
       `- Area: ${property.areaSqft === null ? "Not available" : `${new Intl.NumberFormat("en-IN").format(property.areaSqft)} sq ft`}`,
       `- Current estimated value: ${money(property.currentEstimatedValueInr)}`,
@@ -87,7 +86,7 @@ export function fastAnswer(
   }
 
   if (/^(?:in one sentence,?\s*)?(?:tell me )?(?:how many properties i have|how many properties do i have)(?: and where they are located)?$/.test(question)) {
-    return { intent: "property_count_locations", answer: `You have ${properties.length} properties: ${properties.map((property) => `${property.id} in ${property.location}`).join("; ")}.` };
+    return { intent: "property_count_locations", answer: `You have ${properties.length} properties: ${properties.map((property) => property.location).join("; ")}.` };
   }
 
   if (/\b(?:risk|risks|risky|concentration)\b/.test(question)) {
@@ -124,7 +123,7 @@ export function fastAnswer(
       return requestedType === "commercial" ? ["retail", "office", "commercial office", "commercial"].includes(type) : requestedType === "office" ? type.includes("office") : ["residential", "apartment", "villa"].includes(type);
     });
     const label = requestedType ? `${requestedType[0].toUpperCase()}${requestedType.slice(1)} properties` : "Properties";
-    return { intent: "property_search", answer: selected.length ? `${label}:\n${selected.map((property) => `- ${property.id}: ${property.location} — ${property.propertyType}, ${crore(ownedValue(property))} owned value`).join("\n")}` : `No ${requestedType ?? "matching"} properties were found in this portfolio.` };
+    return { intent: "property_search", answer: selected.length ? `${label}:\n${selected.map((property) => `- ${property.location} — ${property.propertyType}, ${crore(ownedValue(property))} owned value`).join("\n")}` : `No ${requestedType ?? "matching"} properties were found in this portfolio.` };
   }
 
   const threshold = question.match(/^(?:show|list|which)(?:\s+me)?\s+(?:of\s+)?(?:my\s+)?properties\s+(?:are\s+)?(above|over|below|under)\s+(.+)$/);
@@ -133,7 +132,7 @@ export function fastAnswer(
     if (amount !== null) {
       const above = threshold[1] === "above" || threshold[1] === "over";
       const selected = properties.filter((property) => above ? ownedValue(property) > amount : ownedValue(property) < amount);
-      return { intent: "property_value_search", answer: selected.length ? `${selected.map((property) => `- ${property.id}: ${property.location} — ${crore(ownedValue(property))} owned value`).join("\n")}` : "No properties match that value threshold." };
+      return { intent: "property_value_search", answer: selected.length ? `${selected.map((property) => `- ${property.location} — ${crore(ownedValue(property))} owned value`).join("\n")}` : "No properties match that value threshold." };
     }
   }
 

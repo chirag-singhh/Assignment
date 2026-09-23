@@ -7,6 +7,7 @@ import { executeFastAction, incompleteAddPropertyAnswer, parsePortfolioAction } 
 import { getUserProperties } from "../services/propertyService.js";
 import { AppError } from "../utils/errors.js";
 import { validate } from "../middleware/validate.js";
+import { hidePropertyIds } from "../utils/assistantText.js";
 
 export const chatRouter = Router();
 
@@ -84,24 +85,27 @@ chatRouter.post(
       if (req.body.conversationId && !requestedConversation) throw new AppError(404, "Conversation not found for this user.");
       const addDetailsAnswer = incompleteAddPropertyAnswer(req.body.message);
       if (addDetailsAnswer) {
-        const conversation = await persistImmediate({ userId: user.id, conversationId: req.body.conversationId, userMessage: req.body.message, answer: addDetailsAnswer, toolName: "property_details_required", toolInput: { message: req.body.message }, toolOutput: { answer: addDetailsAnswer }, startedAt });
+        const safeAnswer = hidePropertyIds(addDetailsAnswer);
+        const conversation = await persistImmediate({ userId: user.id, conversationId: req.body.conversationId, userMessage: req.body.message, answer: safeAnswer, toolName: "property_details_required", toolInput: { message: req.body.message }, toolOutput: { answer: safeAnswer }, startedAt });
         console.info(JSON.stringify({ event: "chat_request", conversationId: conversation.id, latencyMs: Date.now() - startedAt, path: "property_details_required" }));
-        res.json({ conversationId: conversation.id, message: addDetailsAnswer });
+        res.json({ conversationId: conversation.id, message: safeAnswer });
         return;
       }
       if (parsedAction) {
         const action = await executeFastAction(user.id, req.body.message);
         if (action) {
-          const conversation = await persistImmediate({ userId: user.id, conversationId: req.body.conversationId, userMessage: req.body.message, answer: action.answer, toolName: action.toolName, toolInput: action.input, toolOutput: action.output, startedAt });
+          const safeAnswer = hidePropertyIds(action.answer);
+          const conversation = await persistImmediate({ userId: user.id, conversationId: req.body.conversationId, userMessage: req.body.message, answer: safeAnswer, toolName: action.toolName, toolInput: action.input, toolOutput: action.output, startedAt });
           console.info(JSON.stringify({ event: "chat_request", conversationId: conversation.id, latencyMs: Date.now() - startedAt, path: "fast_action", toolName: action.toolName }));
-          res.json({ conversationId: conversation.id, message: action.answer });
+          res.json({ conversationId: conversation.id, message: safeAnswer });
           return;
         }
       }
       if (fastProperties) {
         const immediate = fastAnswer(req.body.message, fastProperties);
         if (immediate) {
-          const conversation = await persistImmediate({ userId: user.id, conversationId: req.body.conversationId, userMessage: req.body.message, answer: immediate.answer, toolName: "portfolio_fast_answer", toolInput: { intent: immediate.intent }, toolOutput: { answer: immediate.answer }, startedAt });
+          const safeAnswer = hidePropertyIds(immediate.answer);
+          const conversation = await persistImmediate({ userId: user.id, conversationId: req.body.conversationId, userMessage: req.body.message, answer: safeAnswer, toolName: "portfolio_fast_answer", toolInput: { intent: immediate.intent }, toolOutput: { answer: safeAnswer }, startedAt });
           console.info(
             JSON.stringify({
               event: "chat_request",
@@ -112,7 +116,7 @@ chatRouter.post(
           );
           res.json({
             conversationId: conversation.id,
-            message: immediate.answer,
+            message: safeAnswer,
           });
           return;
         }
@@ -168,6 +172,7 @@ chatRouter.post(
           },
         });
       }
+      answer = hidePropertyIds(answer);
       await prisma.message.create({
         data: {
           conversationId: conversation.id,

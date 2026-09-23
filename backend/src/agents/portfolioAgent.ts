@@ -72,7 +72,7 @@ export function writeConfirmation(
       currency: "INR",
       maximumFractionDigits: 0,
     }).format(result.currentEstimatedValueInr);
-    return `${toolName === "add_property" ? "Added" : "Updated"} ${result.location} (${result.id}). Current estimated value: ${value}.${typeof result.annualRentInr === "number" ? ` Annual rent: ${new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(result.annualRentInr)}.` : ""}`;
+    return `${toolName === "add_property" ? "Added" : "Updated"} ${result.location}. Current estimated value: ${value}.${typeof result.annualRentInr === "number" ? ` Annual rent: ${new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(result.annualRentInr)}.` : ""}`;
   } catch {
     return null;
   }

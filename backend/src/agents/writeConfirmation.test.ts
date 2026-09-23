@@ -13,6 +13,7 @@ it("formats the saved INR value from the tool result", () => {
   );
   expect(answer).toContain("₹12,00,00,000");
   expect(answer).not.toContain("12,000,000,000");
+  expect(answer).not.toContain("P001");
 });
 
 it("extracts model text and rejects empty provider responses", () => {
