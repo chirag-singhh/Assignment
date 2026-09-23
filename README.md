@@ -153,6 +153,8 @@ DATABASE_URL="postgresql://postgres:YOUR_LOCAL_POSTGRES_PASSWORD@127.0.0.1:5432/
 DIRECT_URL="postgresql://postgres:YOUR_LOCAL_POSTGRES_PASSWORD@127.0.0.1:5432/portfolio_analyst?schema=public"
 OPENROUTER_API_KEY=your-key-here
 OPENROUTER_MODEL=nex-agi/nex-n2.5-mini:free
+MODEL_TIMEOUT_MS=20000
+MODEL_MAX_RETRIES=0
 USER_PASSWORD=1234
 ADMIN_PASSWORD=1234
 PORT=5000
@@ -166,6 +168,8 @@ VITE_API_BASE_URL=http://localhost:5000
 | `DIRECT_URL` | Prisma Migrate | Local PostgreSQL connection used for schema migrations. |
 | `OPENROUTER_API_KEY` | Backend only | Authenticates model requests. Keep it in `.env`, never in frontend code or `.env.example`. |
 | `OPENROUTER_MODEL` | Backend only | Model name sent through OpenRouter. It must support tool calling. |
+| `MODEL_TIMEOUT_MS` | Backend only | Maximum time for one model request; defaults to 20 seconds. |
+| `MODEL_MAX_RETRIES` | Backend only | Provider retries; defaults to `0` to avoid doubling a slow request. Use `1` if reliability matters more than latency. |
 | `USER_PASSWORD` | Backend only | Protects the Portfolio AI screen and user-facing APIs. The requested demo value is `1234`. |
 | `ADMIN_PASSWORD` | Backend only | Protects the Business dashboard and every `/api/admin/*` data endpoint. The requested demo value is `1234`; use a strong secret for deployment. |
 | `PORT` | Backend | API port; defaults to `5000`. |
@@ -410,6 +414,8 @@ The script reports each request time, median, and maximum. The API logs each mod
 | Local PostgreSQL password is unknown | Reset it in pgAdmin or through your PostgreSQL administrator, then rerun `npm run db:local:setup`. The project does not contain or recover database passwords. |
 | `db:generate` reports `EPERM` on `query_engine-windows.dll.node` | Stop the running backend on Windows, rerun `npm run db:generate`, then restart `npm run dev`; the running process may hold the engine file open. |
 | Browser says `Failed to fetch` | Confirm the API is running on `PORT`, `VITE_API_BASE_URL` points to it, and `CORS_ORIGIN` matches the frontend origin. |
+| `Unexpected token '<'` while parsing JSON | The browser reached an HTML page instead of the API. Redeploy the current build and check `VITE_API_BASE_URL`. The frontend now reports this as a configuration error rather than crashing. |
+| `/api/auth/user-login` returns 404 on Render | Deploy the latest code, use one Render web service, and leave `VITE_API_BASE_URL` unset. The backend now serves both the frontend and `/api/*`; the browser also removes trailing slashes from configured API URLs. |
 | OpenRouter returns HTTP 402 | The gateway declined the request for payment/credits. Check account balance, model access, and the configured model. |
 | AI says it is not configured | Check that `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` are set in the root `.env`, then restart the backend. |
 | Agent asks for clarification | Supply missing type, location, or value; or identify exactly one property. |
@@ -420,7 +426,7 @@ The script reports each request time, median, and maximum. The API logs each mod
 
 ### Why use tools instead of model arithmetic?
 
-The model is good at interpreting conversational language but can miscalculate or invent facts. Tools fetch current data and TypeScript functions calculate portfolio totals. This also makes the calculations testable without paying for model calls. Tool calls may add model round trips, so the agent limits history to 12 messages and has a three-pass cap.
+The model is good at interpreting conversational language but can miscalculate or invent facts. Tools fetch current data and TypeScript functions calculate portfolio totals. This also makes the calculations testable without paying for model calls. Tool calls may add model round trips, so the agent limits history to 8 messages and has a two-pass cap.
 
 ### Observability and human review
 
@@ -430,8 +436,35 @@ The model is good at interpreting conversational language but can miscalculate o
 
 The assignment uses fictional users. Portfolio APIs require `USER_PASSWORD`, and the Business dashboard additionally requires `ADMIN_PASSWORD`. Both values are retained only in browser session storage and are cleared by **Lock** or when the browser session ends. This is suitable for the requested demo gate, but it is not full identity management because portfolio selection still uses a supplied user ID after the shared login. **Do not put real customer data in this demo or expose these APIs publicly as-is.** Before production use, replace shared passwords with authenticated accounts, server-issued secure sessions, role-based authorization on every endpoint, rate limits, audit retention rules, secret management, and restricted CORS.
 
+### Render deployment
+
+The repository contains `render.yaml`, so Render can create one Node web service that serves the API and the compiled React application.
+
+1. Push the latest project files to the repository connected to Render.
+2. In Render, use **New > Blueprint** and select that repository, or copy the commands below into an existing web service.
+3. Set `DATABASE_URL` to the Supabase transaction pooler on port `6543` and include `?pgbouncer=true`.
+4. Set `DIRECT_URL` to the Supabase session pooler on port `5432`.
+5. Set `OPENROUTER_API_KEY`. Keep the configured model or choose another tool-capable OpenRouter model.
+6. Leave `VITE_API_BASE_URL` unset. The frontend and API use the same Render origin.
+7. Deploy and wait for `/health` to report `{"status":"ok"}`.
+
+```text
+Build command: npm ci && npm run build
+Start command: npm run db:migrate && npm start
+Health check: /health
+```
+
+After deployment, verify these URLs. Use exactly one slash between the hostname and `api`:
+
+```text
+https://assignment-pvzb.onrender.com/health
+https://assignment-pvzb.onrender.com/api/auth/user-login
+```
+
+The login endpoint accepts `POST`, so opening it directly in a browser uses `GET` and is not a valid login test. The Portfolio screen sends the correct `POST` request. A Render free instance can sleep when idle, making the first request much slower; an always-on instance is required for consistent low latency.
+
 ### Higher-volume deployment
 
-For a deployed system, use a persistent PostgreSQL service, deploy the Express API on a Node host, and serve the built `frontend/dist` from a static host. Set `VITE_API_BASE_URL` when building the frontend and `CORS_ORIGIN` on the backend to the frontend's public origin. Run migrations before starting API instances. At larger scale, add database connection pooling, pagination for admin lists, per-user rate limits, request tracing, cost tracking, and caching with invalidation after writes. Measure p50, p95, and p99 latency before choosing optimizations.
+For a deployed system, use a persistent PostgreSQL service and connection pooling. This project can serve `frontend/dist` from the same Express service; if the frontend is hosted separately, set `VITE_API_BASE_URL` and allow its exact origin with `CORS_ORIGIN`. Run migrations before starting API instances. At larger scale, add pagination for admin lists, distributed per-user rate limits, request tracing, cost tracking, and caching with invalidation after writes. Measure p50, p95, and p99 latency before choosing optimizations.
 
-The live URL, GitHub repository, and measured live response times are submission tasks beyond the local code. [`WALKTHROUGH.md`](WALKTHROUGH.md), [`ARCHITECTURE.md`](ARCHITECTURE.md), [`DECISION_LOG.md`](DECISION_LOG.md), and [`SOUL.md`](SOUL.md) support the assignment walkthrough.
+The live URL, GitHub repository, and measured live response times are submission tasks beyond the local code. [`CHIRAG.md`](CHIRAG.md), [`ARCHITECTURE.md`](ARCHITECTURE.md), [`DECISION_LOG.md`](DECISION_LOG.md), and [`SOUL.md`](SOUL.md) support the assignment walkthrough.

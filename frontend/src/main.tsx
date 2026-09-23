@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import "./styles.css";
 
-const api = import.meta.env.VITE_API_BASE_URL ?? "";
+const api = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
 const USER_SESSION_KEY = "portfolio_user_password";
 const ADMIN_SESSION_KEY = "portfolio_admin_password";
 
@@ -30,9 +30,31 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   const userPassword = sessionStorage.getItem(USER_SESSION_KEY);
   if (userPassword) headers.set("x-user-password", userPassword);
-  const response = await fetch(`${api}${path}`, { ...init, headers });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error ?? "Request failed.");
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  let response: Response;
+  try {
+    response = await fetch(`${api}${normalizedPath}`, {
+      ...init,
+      headers,
+      signal: init?.signal ?? AbortSignal.timeout(45000),
+    });
+  } catch (error) {
+    if (error instanceof Error && /abort|timeout/i.test(error.name + error.message)) {
+      throw new Error("The server took too long to respond. Please try again.");
+    }
+    throw new Error("Could not reach the API. Check the deployment URL and server status.");
+  }
+  const responseText = await response.text();
+  let body: any = {};
+  if (responseText) {
+    try {
+      body = JSON.parse(responseText);
+    } catch {
+      if (!response.ok) throw new Error(`API request failed with status ${response.status}. Check VITE_API_BASE_URL and the Render service routes.`);
+      throw new Error("The API returned HTML instead of JSON. Check the deployed API URL.");
+    }
+  }
+  if (!response.ok) throw new Error(body.error ?? `Request failed with status ${response.status}.`);
   return body as T;
 }
 
@@ -99,7 +121,11 @@ function Chat() {
       });
       setConversationId(body.conversationId);
       setMessages((items) => [...items, { role: "assistant", content: body.message }]);
-      setConversations(await requestJson<Conversation[]>(`/api/chat/conversations?userId=${encodeURIComponent(userId)}`));
+      // Sidebar data is secondary to the answer. Refresh it without keeping the
+      // composer blocked by another network round trip.
+      void requestJson<Conversation[]>(`/api/chat/conversations?userId=${encodeURIComponent(userId)}`)
+        .then(setConversations)
+        .catch((refreshError) => console.warn("Conversation refresh failed", refreshError));
     } catch (e) {
       setMessages((items) => items.slice(0, -1)); setText(message);
       setError(e instanceof Error ? e.message : "Request failed.");

@@ -18,7 +18,15 @@ import { fastAnswer } from "./fastAnswers.js";
 import { executeFastAction } from "./fastActions.js";
 import { createPortfolioTools } from "../tools/portfolioTools.js";
 
-const MODEL_TIMEOUT_MS = 30000;
+function boundedInteger(value: string | undefined, fallback: number, minimum: number, maximum: number) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? Math.min(maximum, Math.max(minimum, parsed)) : fallback;
+}
+
+// Keep provider slowness bounded. Both values can be tuned in production
+// without a code change, while conservative limits prevent minute-long waits.
+const modelTimeoutMs = () => boundedInteger(process.env.MODEL_TIMEOUT_MS, 20000, 5000, 60000);
+const modelMaxRetries = () => boundedInteger(process.env.MODEL_MAX_RETRIES, 0, 0, 2);
 
 function providerFallback(properties: Awaited<ReturnType<typeof getUserProperties>>) {
   const summary = getPortfolioSummary(properties);
@@ -86,7 +94,7 @@ export async function runPortfolioAgent(input: {
     prisma.message.findMany({
       where: { conversationId: input.conversationId },
       orderBy: { createdAt: "desc" },
-      take: 12,
+      take: 8,
     }),
     getUserProperties(input.userId),
   ]);
@@ -147,14 +155,15 @@ export async function runPortfolioAgent(input: {
     },
   });
   const toolByName = new Map(tools.map((tool) => [tool.name, tool]));
+  const timeoutMs = modelTimeoutMs();
   const model = new ChatOpenAI({
     model: process.env.OPENROUTER_MODEL,
     apiKey: process.env.OPENROUTER_API_KEY,
     configuration: { baseURL: "https://openrouter.ai/api/v1" },
     temperature: 0,
-    timeout: MODEL_TIMEOUT_MS,
-    maxRetries: 1,
-    maxTokens: 600,
+    timeout: timeoutMs,
+    maxRetries: modelMaxRetries(),
+    maxTokens: 450,
   });
   const needsTools =
     /\b(add|create|update|delete|remove|exclude|change|set|edit|modify|raise|increase|decrease|reduce|save|record|insert|revise)\b|\bwhat (?:if|happens if)\b|\bsuppose\b/i.test(
@@ -180,12 +189,12 @@ export async function runPortfolioAgent(input: {
           : new HumanMessage(message.content),
       ),
   ];
-  for (let pass = 0; pass < 3; pass += 1) {
+  for (let pass = 0; pass < 2; pass += 1) {
     const llmStarted = Date.now();
     let answer: any;
     try {
       answer = await responder.invoke(messages, {
-        signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown model error";

@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: assignment
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm run db:migrate && npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: nex-agi/nex-n2.5-mini:free
+      - key: MODEL_TIMEOUT_MS
+        value: "20000"
+      - key: MODEL_MAX_RETRIES
+        value: "0"
+      - key: USER_PASSWORD
+        value: "1234"
+      - key: ADMIN_PASSWORD
+        value: "1234"
