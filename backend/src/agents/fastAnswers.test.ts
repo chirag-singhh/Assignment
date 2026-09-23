@@ -61,6 +61,11 @@ it("answers common questions from owned values and handles punctuation", () => {
     fastAnswer("Which of my properties are above ₹2 crore?", properties)?.answer,
   ).toContain("Pune");
   expect(fastAnswer("Give me a portfolio overview", properties)?.answer).toContain("2 properties");
+  const complete = fastAnswer("show me my complete portfolio", properties)?.answer;
+  expect(complete).toContain("Complete portfolio");
+  expect(complete).toContain("Bandra, Mumbai");
+  expect(complete).toContain("Pune");
+  expect(complete).toContain("Area: Not available");
   expect(fastAnswer("How many properties do I have and where they are located?", properties)?.answer).toContain("Bandra, Mumbai");
   expect(fastAnswer("What risks do you see in my current portfolio?", properties)?.answer).toContain("Vacancy exposure");
 });

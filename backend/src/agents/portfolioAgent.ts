@@ -38,6 +38,20 @@ function providerFallback(properties: Awaited<ReturnType<typeof getUserPropertie
   return `The AI reasoning service is temporarily unavailable, but your live data is connected. Your portfolio currently has ${summary.propertyCount} properties with ${value} in owned value. Please try the question again. Direct questions about value, properties, rent, occupancy, comparisons, risks, scenarios, and property updates continue to use the fast data path.`;
 }
 
+export function modelResponseText(content: unknown) {
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (typeof part === "string") return part;
+      if (part && typeof part === "object" && "text" in part && typeof part.text === "string") return part.text;
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
 export function writeConfirmation(
   toolName: string,
   content: string,
@@ -229,9 +243,14 @@ export async function runPortfolioAgent(input: {
     if (!answer.tool_calls?.length) {
       if (explicitWrite)
         return "No property was changed. Please specify a property in your portfolio and the exact value or details to save.";
-      return typeof answer.content === "string"
-        ? answer.content
-        : "I could not format a response.";
+      const text = modelResponseText(answer.content);
+      if (text) return text;
+      console.warn(JSON.stringify({
+        event: "empty_model_response",
+        conversationId: input.conversationId,
+        pass: pass + 1,
+      }));
+      return providerFallback(properties);
     }
     const writeConfirmations: string[] = [];
     for (const call of answer.tool_calls) {

@@ -16,6 +16,35 @@ import { parseInrAmount } from "./fastActions.js";
 const money = (value: number) =>
   `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(value)}`;
 const crore = (value: number) => `${money(value / 10000000)} crore`;
+const available = (value: string | number | null) =>
+  value === null || value === "" ? "Not available" : String(value);
+
+function completePortfolio(properties: PortfolioProperty[]) {
+  if (!properties.length) return "Your portfolio does not contain any properties yet.";
+  const summary = getPortfolioSummary(properties);
+  const rows = properties.map((property, index) => {
+    const ownership = property.ownershipPercent ?? 100;
+    return [
+      `### ${index + 1}. ${property.location}`,
+      `- Property ID: ${property.id}`,
+      `- Type: ${property.propertyType}${property.subType ? ` — ${property.subType}` : ""}`,
+      `- Area: ${property.areaSqft === null ? "Not available" : `${new Intl.NumberFormat("en-IN").format(property.areaSqft)} sq ft`}`,
+      `- Current estimated value: ${money(property.currentEstimatedValueInr)}`,
+      `- Purchase price: ${property.purchasePriceInr === null ? "Not available" : money(property.purchasePriceInr)}`,
+      `- Annual rent: ${property.annualRentInr === null ? "Not available" : money(property.annualRentInr)}`,
+      `- Ownership: ${ownership}%`,
+      `- Owned value: ${money(ownedValue(property))}`,
+      `- Occupancy: ${available(property.occupancyStatus)}`,
+      `- Tenant status: ${available(property.tenantStatus)}`,
+      `- Record status: ${available(property.status)}`,
+    ].join("\n");
+  });
+  return [
+    `## Complete portfolio`,
+    `You have **${summary.propertyCount} properties** with **${crore(summary.totalValueInr)}** in owned value and **${money(summary.annualRentInr)}** in owned annual rent.`,
+    ...rows,
+  ].join("\n\n");
+}
 
 export function fastAnswer(
   message: string,
@@ -41,6 +70,14 @@ export function fastAnswer(
       intent: "portfolio_value",
       answer: `Your total portfolio value is **${crore(value)}** (${money(value)}), based on your ownership shares.`,
     };
+  }
+
+  if (
+    /^(?:(?:show|list|display|give)\s+(?:me\s+)?)?(?:my\s+)?(?:(?:complete|full|entire)\s+)?portfolio(?:\s+(?:details|holdings|properties))?$/.test(
+      question,
+    )
+  ) {
+    return { intent: "complete_portfolio", answer: completePortfolio(properties) };
   }
 
   if (/^(?:give me |show me |what is |what's )?(?:a )?(?:portfolio )?(?:summary|overview)$/.test(question)) {

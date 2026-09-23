@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { writeConfirmation } from "./portfolioAgent.js";
+import { modelResponseText, writeConfirmation } from "./portfolioAgent.js";
 
 it("formats the saved INR value from the tool result", () => {
   const answer = writeConfirmation(
@@ -13,4 +13,11 @@ it("formats the saved INR value from the tool result", () => {
   );
   expect(answer).toContain("₹12,00,00,000");
   expect(answer).not.toContain("12,000,000,000");
+});
+
+it("extracts model text and rejects empty provider responses", () => {
+  expect(modelResponseText("  Portfolio answer  ")).toBe("Portfolio answer");
+  expect(modelResponseText([{ type: "text", text: "Structured answer" }])).toBe("Structured answer");
+  expect(modelResponseText("   ")).toBe("");
+  expect(modelResponseText([])).toBe("");
 });

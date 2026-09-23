@@ -69,7 +69,7 @@ chatRouter.post(
     const startedAt = Date.now();
     try {
       const fastCandidate =
-        /portfolio value|portfolio (?:summary|overview)|how many properties|where they are located|\b(?:risk|risks|risky|concentration)\b|(?:show|list|which).+properties|highest annual rent|occupancy rate|properties are occupied|what if i exclude|^compare /i.test(
+        /portfolio value|portfolio (?:summary|overview|details|holdings|properties)|(?:complete|full|entire) portfolio|(?:show|list|display|give)(?: me)?(?: my)? portfolio|how many properties|where they are located|\b(?:risk|risks|risky|concentration)\b|(?:show|list|which).+properties|highest annual rent|occupancy rate|properties are occupied|what if i exclude|^compare /i.test(
           req.body.message,
         );
       const parsedAction = parsePortfolioAction(req.body.message);
