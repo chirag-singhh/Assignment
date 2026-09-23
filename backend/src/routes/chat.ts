@@ -3,7 +3,6 @@ import { z } from "zod";
 import { prisma } from "../db/prisma.js";
 import { runPortfolioAgent } from "../agents/portfolioAgent.js";
 import { fastAnswer } from "../agents/fastAnswers.js";
-import { executeFastAction, incompleteAddPropertyAnswer, parsePortfolioAction } from "../agents/fastActions.js";
 import { getUserProperties } from "../services/propertyService.js";
 import { AppError } from "../utils/errors.js";
 import { validate } from "../middleware/validate.js";
@@ -73,7 +72,6 @@ chatRouter.post(
         /portfolio value|portfolio (?:summary|overview|details|holdings|properties)|(?:complete|full|entire) portfolio|(?:show|list|display|give)(?: me)?(?: my)? portfolio|how many properties|where they are located|\b(?:risk|risks|risky|concentration)\b|(?:show|list|which).+properties|highest annual rent|occupancy rate|properties are occupied|what if i exclude|^compare /i.test(
           req.body.message,
         );
-      const parsedAction = parsePortfolioAction(req.body.message);
       const [user, requestedConversation, fastProperties] = await Promise.all([
         prisma.user.findUnique({ where: { id: req.body.userId } }),
         req.body.conversationId ? prisma.conversation.findFirst({ where: { id: req.body.conversationId, userId: req.body.userId } }) : Promise.resolve(null),
@@ -83,24 +81,6 @@ chatRouter.post(
       ]);
       if (!user) throw new AppError(404, "User not found.");
       if (req.body.conversationId && !requestedConversation) throw new AppError(404, "Conversation not found for this user.");
-      const addDetailsAnswer = incompleteAddPropertyAnswer(req.body.message);
-      if (addDetailsAnswer) {
-        const safeAnswer = hidePropertyIds(addDetailsAnswer);
-        const conversation = await persistImmediate({ userId: user.id, conversationId: req.body.conversationId, userMessage: req.body.message, answer: safeAnswer, toolName: "property_details_required", toolInput: { message: req.body.message }, toolOutput: { answer: safeAnswer }, startedAt });
-        console.info(JSON.stringify({ event: "chat_request", conversationId: conversation.id, latencyMs: Date.now() - startedAt, path: "property_details_required" }));
-        res.json({ conversationId: conversation.id, message: safeAnswer });
-        return;
-      }
-      if (parsedAction) {
-        const action = await executeFastAction(user.id, req.body.message);
-        if (action) {
-          const safeAnswer = hidePropertyIds(action.answer);
-          const conversation = await persistImmediate({ userId: user.id, conversationId: req.body.conversationId, userMessage: req.body.message, answer: safeAnswer, toolName: action.toolName, toolInput: action.input, toolOutput: action.output, startedAt });
-          console.info(JSON.stringify({ event: "chat_request", conversationId: conversation.id, latencyMs: Date.now() - startedAt, path: "fast_action", toolName: action.toolName }));
-          res.json({ conversationId: conversation.id, message: safeAnswer });
-          return;
-        }
-      }
       if (fastProperties) {
         const immediate = fastAnswer(req.body.message, fastProperties);
         if (immediate) {

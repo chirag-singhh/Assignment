@@ -9,7 +9,7 @@ import {
   propertyChanges,
   updateProperty,
 } from "../services/propertyService.js";
-import { explicitAddFacts } from "../agents/fastActions.js";
+import { explicitAddFacts, explicitInrAmounts } from "../agents/fastActions.js";
 import {
   comparePropertyTypes,
   getHighestRentProperty,
@@ -23,6 +23,7 @@ type Context = {
   userId: string;
   conversationId: string;
   userMessage: string;
+  currentUserMessage: string;
   log: (
     name: string,
     input: unknown,
@@ -141,9 +142,20 @@ export function createPortfolioTools(context: Context) {
     wrapped(
       context,
       "update_property",
-      "Update exactly one property after explicit user request. Identify it using a property ID or a unique location/name; ask when ambiguous.",
+      "Update exactly one property after an explicit user request. Identify it with a unique location or description; ask when ambiguous. Internal IDs are allowed only for tool execution and must not be shown to the user.",
       z.object({ propertyQuery: z.string().min(1), changes: propertyChanges }),
       async ({ propertyQuery, changes }) => {
+        const statedAmounts = explicitInrAmounts(context.currentUserMessage);
+        const changedMoney = [
+          changes.currentEstimatedValueInr,
+          changes.purchasePriceInr,
+          changes.annualRentInr,
+        ].filter((value): value is number => typeof value === "number");
+        if (statedAmounts.length === 1 && changedMoney.length === 1 && statedAmounts[0] !== changedMoney[0]) {
+          return {
+            error: `The user stated INR ${statedAmounts[0]}, but the proposed update was INR ${changedMoney[0]}. Do not save; use the stated amount.`,
+          };
+        }
         const matches = await findMatchingProperties(
           context.userId,
           propertyQuery,

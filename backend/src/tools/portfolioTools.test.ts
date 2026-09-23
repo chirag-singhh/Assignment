@@ -5,7 +5,7 @@ import { completeAgentPropertyInput } from "../services/propertyService.js";
 it("gives every user the complete tool set", () => {
   const expected = ["get_portfolio", "search_properties", "compare_property_types", "get_highest_rent_property", "add_property", "update_property", "run_portfolio_scenario"];
   for (const userId of ["U001", "U002", "U003", "U004"]) {
-    const tools = createPortfolioTools({ userId, conversationId: `test-${userId}`, userMessage: "Show my portfolio", log: async () => undefined });
+    const tools = createPortfolioTools({ userId, conversationId: `test-${userId}`, userMessage: "Show my portfolio", currentUserMessage: "Show my portfolio", log: async () => undefined });
     expect(tools.map((tool) => tool.name)).toEqual(expected);
   }
 });

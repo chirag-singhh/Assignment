@@ -261,7 +261,7 @@ Open `.env` and set:
 
 ```dotenv
 OPENROUTER_API_KEY=your-real-key
-OPENROUTER_MODEL=nex-agi/nex-n2.5-mini:free
+OPENROUTER_MODEL=openai/gpt-4.1-mini
 ```
 
 Do not place quotes around the key unless the key actually contains spaces. Restart the backend after changing `.env`.
@@ -306,15 +306,15 @@ sequenceDiagram
     R->>R: Show user message immediately
     R->>C: userId, conversationId, message
     C->>P: Verify user and conversation
-    C->>F: Try fast action or fast answer
-    alt Common question or clear write
-        F->>P: Read or update portfolio
+    C->>F: Try deterministic fast answer
+    alt Common read question
+        F->>P: Read portfolio
         F->>P: Save two messages and tool log
         F-->>R: Immediate answer
     else Flexible request
         C->>P: Save user message
         C->>A: Run portfolio agent
-        A->>P: Load last 12 messages and properties
+        A->>P: Load last 8 messages and properties
         A->>O: Prompt plus fresh snapshot
         opt Model asks for a tool
             O->>A: Structured tool request
@@ -333,9 +333,8 @@ sequenceDiagram
 
 Calling a remote AI model for `What is my total portfolio value?` is unnecessary. TypeScript can calculate the exact answer faster and more reliably. The app therefore checks in this order:
 
-1. **Fast action:** clear add or update instruction.
-2. **Fast answer:** common read, comparison, risk, or scenario question.
-3. **AI agent:** flexible language that deterministic patterns do not cover.
+1. **Fast answer:** common read, comparison, risk, or scenario question.
+2. **AI agent:** every add or update request and flexible language outside the read fast path.
 
 All paths use current database records. The fast path is not hard-coded to one user's totals.
 
@@ -727,11 +726,11 @@ No Prisma write is present, so the scenario cannot change stored data.
 
 ---
 
-## 13. Fast answer and fast action code
+## 13. Fast answer and write validation code
 
 ### `backend/src/agents/fastActions.ts`
 
-This handles clear natural-language writes without an AI round trip.
+This contains INR parsing and validation helpers. Add and update execution is performed by the AI tool-calling flow, not by route-level regular expressions.
 
 #### `parseInrAmount`
 
@@ -741,23 +740,7 @@ It removes commas, extracts a number and optional Indian unit, then converts:
 - lakh, lac, or their plurals to `number × 100,000`;
 - plain INR to the original number.
 
-#### `parsePortfolioAction`
-
-Regular expressions recognize:
-
-- add property instructions;
-- estimated value updates;
-- annual rent updates;
-- ownership percentage updates;
-- occupancy updates.
-
-It returns a structured object or `null`. Returning `null` tells the caller that this message needs another path.
-
-#### `executeFastAction`
-
-This parses clear update instructions and calls `updateProperty`. New properties deliberately do not use the fast action because the agent must collect a complete record first. An update succeeds only when the property ID is owned by the active user or the text matches exactly one owned property.
-
-Ambiguous matching returns a clarification message and does not change anything.
+`explicitAddFacts` provides a second safety check for explicitly stated type and value before an AI-requested add is saved. The model remains responsible for understanding the request and collecting every required field.
 
 ### `backend/src/agents/fastAnswers.ts`
 
@@ -805,7 +788,7 @@ This is the central reasoning coordinator.
 
 #### Provider fallback
 
-`MODEL_TIMEOUT_MS` is 30 seconds. OpenRouter gets one retry for transient network failures. If the provider remains unavailable, `providerFallback` returns a current property count and owned value instead of leaking an aborted-request error.
+`MODEL_TIMEOUT_MS` defaults to 20 seconds and automatic retries default to zero. If the provider is unavailable during a write, `providerFallback` states that no property was changed.
 
 #### `writeConfirmation`
 
@@ -815,18 +798,17 @@ This reads a successful tool's JSON and creates a trusted confirmation from the 
 
 The function performs these steps:
 
-1. Try a fast action.
-2. Load the last 12 messages and all current properties in parallel.
-3. Try a fast answer.
-4. Check that OpenRouter configuration exists.
-5. Build a fresh snapshot with summary, type comparison, records, owned values, rent, and yield.
-6. Create seven tools bound to the active user and conversation.
-7. Configure `ChatOpenAI` with OpenRouter's base URL.
-8. Detect whether the message may need tools.
-9. Convert stored messages into LangChain message objects.
-10. Allow at most three model passes.
-11. Execute requested tools and append `ToolMessage` results.
-12. Return a final answer or safe fallback.
+1. Load the last 8 messages and all current properties in parallel.
+2. Try a fast answer for supported read questions.
+3. Check that OpenRouter configuration exists.
+4. Build a fresh snapshot with summary, type comparison, records, owned values, rent, and yield.
+5. Create seven tools bound to the active user and conversation.
+6. Configure `ChatOpenAI` with OpenRouter's base URL.
+7. Bind tools on every model turn so follow-up property details can finish a pending operation.
+8. Convert stored messages into LangChain message objects.
+9. Allow at most two model passes.
+10. Validate each requested tool, permit at most one successful mutation per message, and append `ToolMessage` results.
+11. Confirm writes from the saved record or return a safe fallback.
 
 The active `userId` is supplied by backend context, not chosen by the model. That is a major data-isolation control.
 
@@ -912,18 +894,17 @@ The body schema requires:
 The route:
 
 1. determines whether the message might have a fast answer;
-2. parses a possible fast action;
-3. loads user, conversation, and possibly properties in parallel;
-4. rejects missing users or cross-user conversations;
-5. runs the fast action or fast answer when possible;
-6. otherwise creates or resumes a conversation;
-7. saves the user message;
-8. calls `runPortfolioAgent`;
-9. converts unexpected agent errors into safe text;
-10. saves the assistant response;
-11. updates conversation time;
-12. logs total request latency;
-13. returns JSON to the frontend.
+2. loads user, conversation, and possibly properties in parallel;
+3. rejects missing users or cross-user conversations;
+4. runs a deterministic read answer when possible;
+5. otherwise creates or resumes a conversation;
+6. saves the user message;
+7. calls `runPortfolioAgent`;
+8. converts unexpected agent errors into safe text;
+9. saves the assistant response;
+10. updates conversation time;
+11. logs total request latency;
+12. returns JSON to the frontend.
 
 ### `backend/src/routes/admin.ts`
 
@@ -1241,14 +1222,14 @@ The project reduces delay by:
 
 - using local PostgreSQL;
 - handling common questions without OpenRouter;
-- handling clear writes without OpenRouter;
+- using validated AI tool calls for all property writes;
 - loading history and properties in parallel;
 - loading initial chat dependencies in parallel;
 - including fresh data in one model prompt;
 - returning trusted write confirmation immediately;
-- limiting history to 12 messages;
-- limiting model output to 600 tokens;
-- setting a 30-second timeout;
+- limiting history to 8 messages;
+- limiting model output to 450 tokens;
+- setting a configurable 20-second timeout;
 - returning a portfolio-aware fallback when the model provider fails.
 
 At much higher volume, add a managed connection pool, API rate limits, pagination, caching for read summaries with invalidation after writes, background analytics, structured tracing, multiple API instances, model-provider fallbacks, and p50/p95/p99 dashboards.
@@ -1289,7 +1270,7 @@ Check `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` in `.env`, then restart the ba
 
 ### Model request takes too long
 
-Common supported questions should use the fast path. Flexible questions use OpenRouter and can vary with provider load. The backend waits up to 30 seconds and then returns a current portfolio fallback.
+Common supported read questions use the fast path. Adds, updates, and flexible questions use OpenRouter and can vary with provider load. The backend waits up to 20 seconds by default and never reports a write as successful unless its database tool succeeded.
 
 ### Visible `**` symbols
 

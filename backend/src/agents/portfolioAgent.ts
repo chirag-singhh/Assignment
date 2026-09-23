@@ -15,7 +15,6 @@ import {
 } from "../services/portfolioService.js";
 import { SYSTEM_PROMPT } from "./prompts.js";
 import { fastAnswer } from "./fastAnswers.js";
-import { executeFastAction } from "./fastActions.js";
 import { createPortfolioTools } from "../tools/portfolioTools.js";
 
 function boundedInteger(value: string | undefined, fallback: number, minimum: number, maximum: number) {
@@ -28,14 +27,16 @@ function boundedInteger(value: string | undefined, fallback: number, minimum: nu
 const modelTimeoutMs = () => boundedInteger(process.env.MODEL_TIMEOUT_MS, 20000, 5000, 60000);
 const modelMaxRetries = () => boundedInteger(process.env.MODEL_MAX_RETRIES, 0, 0, 2);
 
-function providerFallback(properties: Awaited<ReturnType<typeof getUserProperties>>) {
+function providerFallback(properties: Awaited<ReturnType<typeof getUserProperties>>, writeRequested = false) {
+  if (writeRequested)
+    return "The AI service is temporarily unavailable, so no property was changed. Please retry when the service is available.";
   const summary = getPortfolioSummary(properties);
   const value = new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
     maximumFractionDigits: 0,
   }).format(summary.totalValueInr);
-  return `The AI reasoning service is temporarily unavailable, but your live data is connected. Your portfolio currently has ${summary.propertyCount} properties with ${value} in owned value. Please try the question again. Direct questions about value, properties, rent, occupancy, comparisons, risks, scenarios, and property updates continue to use the fast data path.`;
+  return `The AI reasoning service is temporarily unavailable, but your live data is connected. Your portfolio currently has ${summary.propertyCount} properties with ${value} in owned value. Please retry the question.`;
 }
 
 export function modelResponseText(content: unknown) {
@@ -60,8 +61,7 @@ export function writeConfirmation(
     return null;
   try {
     const result = JSON.parse(content) as Record<string, unknown>;
-    if (typeof result.error === "string")
-      return `The property was not saved: ${result.error}`;
+    if (typeof result.error === "string") return null;
     if (
       typeof result.location !== "string" ||
       typeof result.currentEstimatedValueInr !== "number"
@@ -90,20 +90,6 @@ export async function runPortfolioAgent(input: {
     portfolioValuePreference: string | null;
   };
 }) {
-  const actionStarted = Date.now();
-  const action = await executeFastAction(input.userId, input.message);
-  if (action) {
-    await prisma.toolLog.create({
-      data: {
-        conversationId: input.conversationId,
-        toolName: action.toolName,
-        input: action.input as any,
-        output: action.output as any,
-        executionTimeMs: Date.now() - actionStarted,
-      },
-    });
-    return action.answer;
-  }
   const [history, properties] = await Promise.all([
     prisma.message.findMany({
       where: { conversationId: input.conversationId },
@@ -156,6 +142,7 @@ export async function runPortfolioAgent(input: {
     userId: input.userId,
     conversationId: input.conversationId,
     userMessage: [input.message, ...history.filter((message: { role: string }) => message.role === "user").map((message: { content: string }) => message.content)].find((message) => /^\s*(?:please\s+)?(?:add|create|record|save)\b/i.test(message)) ?? input.message,
+    currentUserMessage: input.message,
     log: async (toolName, toolInput, output, startedAt) => {
       await prisma.toolLog.create({
         data: {
@@ -179,18 +166,15 @@ export async function runPortfolioAgent(input: {
     maxRetries: modelMaxRetries(),
     maxTokens: 450,
   });
-  const needsTools =
-    /\b(add|create|update|delete|remove|exclude|change|set|edit|modify|raise|increase|decrease|reduce|save|record|insert|revise)\b|\bwhat (?:if|happens if)\b|\bsuppose\b/i.test(
+  const writeRequested =
+    /\b(add|create|update|change|set|edit|modify|make|mark|raise|increase|decrease|reduce|save|record|insert|revise)\b/i.test(
       input.message,
+    ) || history.slice(0, 4).some((message: { role: string; content: string }) =>
+      message.role === "assistant" && /\b(?:before I add|missing|required fields?|please provide|more specific location|which property)\b/i.test(message.content),
     );
-  const explicitWrite =
-    /\b(add|create|update|change|set|edit|modify|raise|increase|decrease|reduce|save|record|insert|revise)\b/i.test(
-      input.message,
-    ) &&
-    !/^(what|how|why|when|where|which|if|suppose)\b|\bhow to\b|\bwhat information\b/i.test(
-      input.message.trim(),
-    );
-  const responder = needsTools ? model.bindTools(tools) : model;
+  // Tools stay available on every model turn. This is required for replies such
+  // as "it is 1,800 sq ft..." after the agent asked for missing add details.
+  const responder = model.bindTools(tools);
   const messages: any[] = [
     new SystemMessage(
       `${SYSTEM_PROMPT}\n\nFresh portfolio snapshot (INR): ${JSON.stringify(snapshot)}`,
@@ -203,6 +187,8 @@ export async function runPortfolioAgent(input: {
           : new HumanMessage(message.content),
       ),
   ];
+  let lastToolError = "";
+  let mutationCompleted = false;
   for (let pass = 0; pass < 2; pass += 1) {
     const llmStarted = Date.now();
     let answer: any;
@@ -228,7 +214,7 @@ export async function runPortfolioAgent(input: {
           executionTimeMs: Date.now() - llmStarted,
         },
       });
-      return providerFallback(properties);
+      return providerFallback(properties, writeRequested);
     }
     console.info(
       JSON.stringify({
@@ -241,8 +227,6 @@ export async function runPortfolioAgent(input: {
     );
     messages.push(answer);
     if (!answer.tool_calls?.length) {
-      if (explicitWrite)
-        return "No property was changed. Please specify a property in your portfolio and the exact value or details to save.";
       const text = modelResponseText(answer.content);
       if (text) return text;
       console.warn(JSON.stringify({
@@ -250,19 +234,52 @@ export async function runPortfolioAgent(input: {
         conversationId: input.conversationId,
         pass: pass + 1,
       }));
-      return providerFallback(properties);
+      return providerFallback(properties, writeRequested);
     }
     const writeConfirmations: string[] = [];
     for (const call of answer.tool_calls) {
+      const toolStarted = Date.now();
       const tool = toolByName.get(call.name);
-      const content = tool
-        ? await (tool as any).invoke(call.args)
-        : JSON.stringify({ error: `Unknown tool ${call.name}` });
+      const isMutation = call.name === "add_property" || call.name === "update_property";
+      let content: string;
+      if (isMutation && mutationCompleted) {
+        content = JSON.stringify({ error: "Only one property mutation is allowed per message." });
+      } else {
+        try {
+          content = tool
+            ? await (tool as any).invoke(call.args)
+            : JSON.stringify({ error: `Unknown tool ${call.name}` });
+        } catch (error) {
+          content = JSON.stringify({
+            error: isMutation
+              ? "The proposed property data failed validation. Ask the user for the missing or invalid fields."
+              : error instanceof Error ? error.message : "Tool validation failed.",
+          });
+          await prisma.toolLog.create({
+            data: {
+              conversationId: input.conversationId,
+              toolName: call.name || "unknown_tool",
+              input: call.args as any,
+              output: JSON.parse(content),
+              executionTimeMs: Date.now() - toolStarted,
+            },
+          });
+        }
+      }
       messages.push(new ToolMessage({ tool_call_id: call.id, content }));
+      try {
+        const result = JSON.parse(content) as { error?: unknown };
+        if (typeof result.error === "string") lastToolError = result.error;
+        else if (isMutation) mutationCompleted = true;
+      } catch {
+        lastToolError = "The tool returned an invalid result.";
+      }
       const confirmation = writeConfirmation(call.name, content);
       if (confirmation) writeConfirmations.push(confirmation);
     }
     if (writeConfirmations.length) return writeConfirmations.join("\n");
   }
-  return "I could not complete that request after several tool calls. Please rephrase it.";
+  return lastToolError
+    ? `No property was changed. ${lastToolError}`
+    : "I could not complete that request after several tool calls. Please rephrase it.";
 }

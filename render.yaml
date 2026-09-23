@@ -19,7 +19,7 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
-        value: nex-agi/nex-n2.5-mini:free
+        value: openai/gpt-4.1-mini
       - key: MODEL_TIMEOUT_MS
         value: "20000"
       - key: MODEL_MAX_RETRIES
