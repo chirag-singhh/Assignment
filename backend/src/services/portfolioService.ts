@@ -71,8 +71,12 @@ export function getOccupancyStats(properties: PortfolioProperty[]) {
   const occupied = properties.filter((p) =>
     ["tenanted", "occupied"].includes(p.occupancyStatus?.toLowerCase() ?? ""),
   ).length;
-  const vacant = properties.filter((p) => p.occupancyStatus?.toLowerCase() === "vacant").length;
-  const selfOccupied = properties.filter((p) => p.occupancyStatus?.toLowerCase() === "self-occupied").length;
+  const vacant = properties.filter(
+    (p) => p.occupancyStatus?.toLowerCase() === "vacant",
+  ).length;
+  const selfOccupied = properties.filter(
+    (p) => p.occupancyStatus?.toLowerCase() === "self-occupied",
+  ).length;
   return {
     total: properties.length,
     occupied,
@@ -102,8 +106,14 @@ export function comparePropertyTypes(properties: PortfolioProperty[]) {
   );
 }
 export function getPortfolioSummary(properties: PortfolioProperty[]) {
-  const retail = properties.filter((p) => p.propertyType.trim().toLowerCase() === "retail");
-  const office = properties.filter((p) => ["office", "commercial office"].includes(p.propertyType.trim().toLowerCase()));
+  const retail = properties.filter(
+    (p) => p.propertyType.trim().toLowerCase() === "retail",
+  );
+  const office = properties.filter((p) =>
+    ["office", "commercial office"].includes(
+      p.propertyType.trim().toLowerCase(),
+    ),
+  );
   return {
     propertyCount: properties.length,
     totalValueInr: calculateTotalPortfolioValue(properties),

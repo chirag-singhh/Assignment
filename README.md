@@ -2,7 +2,7 @@
 
 A conversational analyst for the synthetic real estate portfolios supplied with the assignment. A user can ask about holdings, compare properties, add or update a property, and explore a hypothetical change. A separate business dashboard shows conversations and agent activity.
 
-This guide starts with basic setup and then explains the code, data flow, calculations, API, testing, operations, and production considerations. **The steps below use Supabase PostgreSQL; Docker is not required.**
+This guide starts with basic setup and then explains the code, data flow, calculations, API, testing, operations, and production considerations. **The steps below use PostgreSQL installed on your computer; Docker is not required.**
 
 ## Contents
 
@@ -111,21 +111,32 @@ erDiagram
 ### 1. Install prerequisites
 
 - Node.js **20 or newer** and npm.
-- A Supabase project with its database password and the two pooler URLs from the project's **Connect** panel.
+- PostgreSQL **15 or newer** installed and running locally. PostgreSQL 18 is supported.
+- The password for your local PostgreSQL `postgres` user.
 - An OpenRouter account, API key, and access/credits for the model selected in `.env`.
 
-You do not need to install PostgreSQL or Docker locally. Supabase hosts the database. Use a dedicated or empty Supabase project for the assignment so its migration only manages this app's tables.
+Docker is not used. On Windows, the PostgreSQL installer includes the server, `psql`, and pgAdmin. Keep the PostgreSQL Windows service running before starting the app.
 
-### 2. Copy the two Supabase connection strings
+### 2. Create the local database
 
-In Supabase, open the project's **Connect** panel and copy:
+The easiest setup is to install packages and run the secure setup command from the project root:
 
-1. The **Transaction pooler** URL (port `6543`) for normal API and seed queries. Keep `pgbouncer=true` in its query parameters.
-2. The **Session pooler** URL (port `5432`) for Prisma migrations. This is named `DIRECT_URL` in this project even though it uses Supabase's session pooler rather than a direct IPv6 database address.
+```powershell
+npm install
+npm run db:local:setup
+```
 
-The shared pooler username includes your project reference, such as `postgres.PROJECT_REF`. Copy the host and username from Supabase rather than guessing them. Replace `[YOUR-PASSWORD]` in **both** URLs with the actual database password. If that password contains `@`, `:`, `/`, `?`, `#`, or other reserved URL characters, URL-encode it first. Leaving the literal `[YOUR-PASSWORD]` produces an authentication failure.
+The script asks for the local `postgres` password without displaying it, creates `portfolio_analyst`, updates only `DATABASE_URL` and `DIRECT_URL` in `.env`, applies the migrations, and loads the seed data. Skip to **Start the app** when it finishes.
 
-This split follows [Supabase's connection modes](https://supabase.com/docs/guides/database/connecting-to-postgres) and [Prisma's pooled-runtime/migration configuration](https://docs.prisma.io/docs/orm/reference/prisma-config-reference). With this project's Prisma 6 schema, `url` is used by Prisma Client and `directUrl` is used by migration commands.
+To perform the same steps manually, open **SQL Shell (psql)** from the Start menu. Accept the defaults for server (`localhost`), database (`postgres`), port (`5432`), and username (`postgres`), then enter the password chosen during PostgreSQL installation. At the `postgres=#` prompt run:
+
+```sql
+CREATE DATABASE portfolio_analyst;
+```
+
+If PostgreSQL reports that the database already exists, continue. You only create it once. Exit with `\q`.
+
+Both Prisma URLs point to this database. `DATABASE_URL` is used by the running API and `DIRECT_URL` is used by migrations.
 
 ### 3. Configure the environment
 
@@ -138,10 +149,12 @@ Copy-Item .env.example .env
 Set the values to your database and model account. Example **with placeholders**:
 
 ```dotenv
-DATABASE_URL="postgresql://postgres.PROJECT_REF:YOUR_PASSWORD@POOLER_HOST:6543/postgres?pgbouncer=true&sslmode=require"
-DIRECT_URL="postgresql://postgres.PROJECT_REF:YOUR_PASSWORD@POOLER_HOST:5432/postgres?sslmode=require"
+DATABASE_URL="postgresql://postgres:YOUR_LOCAL_POSTGRES_PASSWORD@127.0.0.1:5432/portfolio_analyst?schema=public"
+DIRECT_URL="postgresql://postgres:YOUR_LOCAL_POSTGRES_PASSWORD@127.0.0.1:5432/portfolio_analyst?schema=public"
 OPENROUTER_API_KEY=your-key-here
-OPENROUTER_MODEL=openai/gpt-4o-mini
+OPENROUTER_MODEL=nex-agi/nex-n2.5-mini:free
+USER_PASSWORD=1234
+ADMIN_PASSWORD=1234
 PORT=5000
 CORS_ORIGIN=http://localhost:5173
 VITE_API_BASE_URL=http://localhost:5000
@@ -149,10 +162,12 @@ VITE_API_BASE_URL=http://localhost:5000
 
 | Variable | Used by | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL` | Prisma/backend | Supabase transaction pooler for runtime queries and the seed script. |
-| `DIRECT_URL` | Prisma Migrate | Supabase session pooler for schema migrations. |
+| `DATABASE_URL` | Prisma/backend | Local PostgreSQL connection used by the Express API. |
+| `DIRECT_URL` | Prisma Migrate | Local PostgreSQL connection used for schema migrations. |
 | `OPENROUTER_API_KEY` | Backend only | Authenticates model requests. Keep it in `.env`, never in frontend code or `.env.example`. |
 | `OPENROUTER_MODEL` | Backend only | Model name sent through OpenRouter. It must support tool calling. |
+| `USER_PASSWORD` | Backend only | Protects the Portfolio AI screen and user-facing APIs. The requested demo value is `1234`. |
+| `ADMIN_PASSWORD` | Backend only | Protects the Business dashboard and every `/api/admin/*` data endpoint. The requested demo value is `1234`; use a strong secret for deployment. |
 | `PORT` | Backend | API port; defaults to `5000`. |
 | `CORS_ORIGIN` | Backend | Browser origin allowed to call the API. |
 | `VITE_API_BASE_URL` | Frontend | URL of the API that the browser calls. |
@@ -174,7 +189,7 @@ What each command does:
 
 1. `npm install` installs the backend and frontend packages defined by the npm workspaces.
 2. `db:generate` generates the Prisma Client from the schema. It does not create tables.
-3. `db:migrate` runs the committed SQL migration through `DIRECT_URL` against your Supabase project.
+3. `db:migrate` runs the committed SQL migration through `DIRECT_URL` against `portfolio_analyst`.
 4. `db:seed` imports the bundled CSVs from `dataset/`. It upserts seed rows by ID, so rerunning it does not duplicate them. It can reset changes to those original seed rows; use a fresh database for repeatable demos.
 
 ### 5. Start the app
@@ -185,43 +200,67 @@ npm run dev
 
 This starts the API (normally `http://localhost:5000`) and the Vite frontend (normally `http://localhost:5173`). Open the Vite URL printed in the terminal. Choose a user such as **U001 – Rahul Mehta**.
 
+### Optional: switch this project to Supabase
+
+The project includes a secure setup command for the configured Supabase project and shared pooler. It asks for the Supabase database password without displaying it, verifies authentication before changing `.env`, uses transaction mode on port `6543` for the API, uses session mode on port `5432` for migrations, applies the migration, and loads the dataset:
+
+```powershell
+npm run db:supabase:setup
+```
+
+Restart the backend after the command finishes. Run `npm run db:local:setup` whenever you want to switch back to locally installed PostgreSQL.
+
 Check the API separately in PowerShell:
 
 ```powershell
 Invoke-RestMethod http://localhost:5000/health
-Invoke-RestMethod http://localhost:5000/api/admin/users
+Invoke-RestMethod http://localhost:5000/api/users
 ```
 
-The health endpoint only checks that the API process responds. The users endpoint also checks database access; it should return the four seeded users.
+The health endpoint only checks that the API process responds. Open the application and enter `1234` to access the Portfolio AI screen. The user selector then checks database access and should show the four seeded users. Open **Business** and enter `1234` again to access the operational dashboard.
 
 ## Try the main features
 
 | User | Message | Expected path |
 | --- | --- | --- |
-| U001 | “What is my total portfolio value?” | Portfolio summary tool and calculation service. |
-| U001 | “Show me my retail properties.” | Property search tool. |
+| U001 | “What is my total portfolio value?” | Fast answer from fresh database records and calculation service. |
+| U001 | “Show my retail properties.” | Fast answer listing current retail holdings. |
 | U001 | “Which properties are above ₹10 crore?” | Property search with a value threshold. |
-| U003 | “Which property gives me the highest annual rent?” | Highest-rent tool. |
+| U003 | “Which property gives me the highest annual rent?” | Fast answer from current owned annual rent. |
 | U004 | “Add a 3000 sq ft retail property in Indiranagar worth ₹4.2 crore.” | Validated `add_property` write. |
 | U001 | “Change my Bandra retail property value to ₹12.5 crore.” | Unique property match and validated `update_property` write. |
-| U001 | “What if I exclude the Bandra property?” | Read-only scenario; actual records remain unchanged. |
+| U001 | “What if I exclude the Bandra property?” | Fast read-only scenario; actual records remain unchanged. |
 
 For a multi-turn check, first ask U001 about retail properties, then ask “Which one is performing better?” The agent receives recent conversation history and can retrieve current property facts again. Open **Business** in the top navigation to inspect the resulting messages and tool calls.
 
 ## How a chat request works
 
 1. [`frontend/src/main.tsx`](frontend/src/main.tsx) sends the selected `userId`, message, and optional `conversationId` to `POST /api/chat`.
-2. [`backend/src/routes/chat.ts`](backend/src/routes/chat.ts) checks that the user exists and that an existing conversation belongs to that user. It saves the user message.
-3. [`backend/src/agents/portfolioAgent.ts`](backend/src/agents/portfolioAgent.ts) loads the latest 12 stored messages. Its system prompt comes from [`prompts.ts`](backend/src/agents/prompts.ts).
-4. The agent sends the prompt and structured tool definitions to OpenRouter. The model may select a tool, such as `get_portfolio` or `search_properties`.
-5. [`portfolioTools.ts`](backend/src/tools/portfolioTools.ts) validates the tool arguments, calls a service, and saves a `ToolLog` with input, output, and duration. The tool is scoped to the selected user.
-6. The agent sends the tool result back to the model for a final natural-language answer. The chat route saves that answer and returns it to the browser.
+2. [`backend/src/routes/chat.ts`](backend/src/routes/chat.ts) validates the user. For common, unambiguous read questions, [`fastAnswers.ts`](backend/src/agents/fastAnswers.ts) computes the answer from fresh property records. It saves both messages and a `portfolio_fast_answer` log in one database operation.
+3. Other questions go to [`backend/src/agents/portfolioAgent.ts`](backend/src/agents/portfolioAgent.ts). It loads the latest 12 stored messages and a fresh, calculated portfolio snapshot. Its system prompt comes from [`prompts.ts`](backend/src/agents/prompts.ts).
+4. Read-only questions use one OpenRouter model call with the snapshot. Write and scenario questions can call structured tools such as `add_property` or `run_portfolio_scenario`.
+5. [`portfolioTools.ts`](backend/src/tools/portfolioTools.ts) validates tool arguments, calls a service, and saves a `ToolLog` with input, output, and duration. Every tool is scoped to the selected user.
+6. The chat route saves the answer and returns it to the browser.
 
-The model can make at most five passes. Each model call has a 30-second timeout and one retry. If the agent throws an error, the route saves a safe response and an `agent_error` log so the business view can flag the conversation.
+The model can make at most three passes. Each model call has a 30-second timeout and one retry for transient provider failures. If OpenRouter is still unavailable, the agent saves a `model_unavailable` log and returns a useful live portfolio snapshot instead of exposing an aborted request. The frontend renders assistant Markdown safely, so emphasis and lists appear as formatted content rather than visible formatting symbols.
 
 ### Actual data versus hypothetical data
 
-The read tools query current database records. The `run_portfolio_scenario` tool calls [`scenarioService.ts`](backend/src/services/scenarioService.ts), which filters an in-memory property list and returns **actual**, **hypothetical**, and **difference** values. It never writes to PostgreSQL. The prompt instructs the model to label those results as hypothetical.
+The read tools and fast answers use current database records. [`scenarioService.ts`](backend/src/services/scenarioService.ts) filters an in-memory property list and returns **actual**, **hypothetical**, and **difference** values. It never writes to PostgreSQL. Fast scenario answers and the agent label those results as hypothetical.
+
+### Tool access for every user
+
+Every chat creates the same user-scoped tool set for U001, U002, U003, U004, and any future valid user:
+
+| Capability | Implementation |
+| --- | --- |
+| Portfolio profile and summary | `get_portfolio` calls `getUserPortfolio` and `getUserProperties`. |
+| Property lookup and filters | `search_properties` calls `getUserProperties`; update matching uses `findMatchingProperties`. |
+| Add a property | `add_property` requires a complete record through `completeAgentPropertyInput`, verifies any explicitly stated type and INR value, and then calls `addProperty`. Missing details produce a clarification instead of a partial record. |
+| Update a property | `update_property` calls `updateProperty` after `propertyChanges` validation. The database update includes both property ID and user ID. |
+| Comparisons and scenarios | Comparison, highest-rent, and exclusion tools use only that user's current properties. |
+
+Clear add and update sentences are parsed deterministically and sent directly through the same validated service functions. This removes one or two OpenRouter calls without bypassing validation, ownership checks, conversation history, or `ToolLog`. Less structured requests still use the model with the complete tool set.
 
 ## Project files explained
 
@@ -320,6 +359,9 @@ All API responses are JSON except a successful delete. The UI calls these endpoi
 | `POST /api/properties` | Create a property with `userId`, type, location, and estimated value. |
 | `PATCH /api/properties/:id` | Update allowed fields using `{ "userId": "...", "changes": { ... } }`. |
 | `DELETE /api/properties/:id?userId=U001` | Delete a property directly through the API. |
+| `POST /api/auth/user-login` | Validate the Portfolio AI password. |
+| `GET /api/users` | List the safe user fields needed by the portfolio selector; requires `x-user-password`. |
+| `POST /api/admin/login` | Validate `{ "password": "..." }` before opening the Business dashboard. |
 | `GET /api/admin/users` | List users and property/conversation counts. |
 | `GET /api/admin/conversations` | List conversations and counts. |
 | `GET /api/admin/conversations/:id` | Inspect messages and tool logs. |
@@ -358,11 +400,14 @@ The script reports each request time, median, and maximum. The API logs each mod
 
 | Symptom | Check |
 | --- | --- |
-| `Can't reach database server` or Prisma initialization error | Check the Supabase project state, the exact pooler host, port `6543`, username, password, and network access. |
-| `Authentication failed` | Replace the literal `[YOUR-PASSWORD]` in **both** URLs with the real Supabase database password; URL-encode special characters. |
-| No users in the chat selector | Run `npm run db:migrate` and `npm run db:seed`; check `GET /api/admin/users`. |
-| Migration fails | Confirm `DIRECT_URL` uses the session pooler on port `5432`, the correct password, and the intended project. |
+| `Can't reach database server` or Prisma initialization error | Start the local PostgreSQL Windows service and confirm it listens on `127.0.0.1:5432`. |
+| `Authentication failed` | Replace `YOUR_LOCAL_POSTGRES_PASSWORD` in both URLs with the password chosen when PostgreSQL was installed. URL-encode reserved characters such as `@`, `:`, `/`, `?`, and `#`. |
+| No users in the chat selector | Enter the Portfolio AI password, run `npm run db:migrate` and `npm run db:seed`, then check `GET /api/users` with the `x-user-password` header. |
+| Portfolio screen says access is required | Enter the configured `USER_PASSWORD`. Protected user requests must include it in the `x-user-password` header. |
+| Business dashboard says access is required | Enter the configured `ADMIN_PASSWORD`. Protected API requests must include it in the `x-admin-password` header. |
+| Migration fails | Confirm `portfolio_analyst` exists and `DIRECT_URL` uses `127.0.0.1:5432`, user `postgres`, and the correct password. |
 | `Prisma Client` missing | Run `npm install` and `npm run db:generate`. |
+| Local PostgreSQL password is unknown | Reset it in pgAdmin or through your PostgreSQL administrator, then rerun `npm run db:local:setup`. The project does not contain or recover database passwords. |
 | `db:generate` reports `EPERM` on `query_engine-windows.dll.node` | Stop the running backend on Windows, rerun `npm run db:generate`, then restart `npm run dev`; the running process may hold the engine file open. |
 | Browser says `Failed to fetch` | Confirm the API is running on `PORT`, `VITE_API_BASE_URL` points to it, and `CORS_ORIGIN` matches the frontend origin. |
 | OpenRouter returns HTTP 402 | The gateway declined the request for payment/credits. Check account balance, model access, and the configured model. |
@@ -375,7 +420,7 @@ The script reports each request time, median, and maximum. The API logs each mod
 
 ### Why use tools instead of model arithmetic?
 
-The model is good at interpreting conversational language but can miscalculate or invent facts. Tools fetch current data and TypeScript functions calculate portfolio totals. This also makes the calculations testable without paying for model calls. Tool calls may add model round trips, so the agent limits history to 12 messages and has a five-pass cap.
+The model is good at interpreting conversational language but can miscalculate or invent facts. Tools fetch current data and TypeScript functions calculate portfolio totals. This also makes the calculations testable without paying for model calls. Tool calls may add model round trips, so the agent limits history to 12 messages and has a three-pass cap.
 
 ### Observability and human review
 
@@ -383,7 +428,7 @@ The model is good at interpreting conversational language but can miscalculate o
 
 ### Security boundary
 
-The assignment uses fictional users and does not require authentication. The current UI selects a user by ID, and the admin and direct property APIs are not protected. **Do not put real customer data in this demo or expose those APIs publicly as-is.** Before production use, add authentication, role-based access for the business dashboard, authorization on every endpoint, rate limits, audit retention rules, secret management, and restricted CORS. Never commit `.env` or a real API key. If a key was accidentally placed in a tracked file, rotate it and remove it from Git history.
+The assignment uses fictional users. Portfolio APIs require `USER_PASSWORD`, and the Business dashboard additionally requires `ADMIN_PASSWORD`. Both values are retained only in browser session storage and are cleared by **Lock** or when the browser session ends. This is suitable for the requested demo gate, but it is not full identity management because portfolio selection still uses a supplied user ID after the shared login. **Do not put real customer data in this demo or expose these APIs publicly as-is.** Before production use, replace shared passwords with authenticated accounts, server-issued secure sessions, role-based authorization on every endpoint, rate limits, audit retention rules, secret management, and restricted CORS.
 
 ### Higher-volume deployment
 

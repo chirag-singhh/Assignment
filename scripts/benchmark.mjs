@@ -15,9 +15,25 @@ for (const question of questions) {
     body: JSON.stringify({ userId, conversationId, message: question }),
   });
   const body = await response.json();
-  if (!response.ok || body.message?.includes("could not complete")) throw new Error(JSON.stringify(body));
+  if (!response.ok || body.message?.includes("could not complete"))
+    throw new Error(JSON.stringify(body));
   conversationId = body.conversationId;
-  measurements.push({ question, elapsedMs: Math.round(performance.now() - started) });
+  measurements.push({
+    question,
+    elapsedMs: Math.round(performance.now() - started),
+  });
 }
 const sorted = measurements.map((m) => m.elapsedMs).sort((a, b) => a - b);
-console.log(JSON.stringify({ userId, conversationId, samples: measurements, medianMs: sorted[1], maxMs: sorted[2] }, null, 2));
+console.log(
+  JSON.stringify(
+    {
+      userId,
+      conversationId,
+      samples: measurements,
+      medianMs: sorted[1],
+      maxMs: sorted[2],
+    },
+    null,
+    2,
+  ),
+);

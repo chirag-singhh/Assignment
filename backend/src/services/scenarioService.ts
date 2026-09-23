@@ -8,11 +8,17 @@ export function excludePropertyScenario(
   properties: PortfolioProperty[],
   query: string,
 ) {
-  const terms = query.toLowerCase().split(/\s+/).filter((word) => word && !["property", "my", "the"].includes(word));
-  const matches = terms.length ? properties.filter((property) => {
-    const haystack = `${property.id} ${property.location} ${property.propertyType} ${property.subType ?? ""}`.toLowerCase();
-    return terms.every((word) => haystack.includes(word));
-  }) : [];
+  const terms = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((word) => word && !["property", "my", "the"].includes(word));
+  const matches = terms.length
+    ? properties.filter((property) => {
+        const haystack =
+          `${property.id} ${property.location} ${property.propertyType} ${property.subType ?? ""}`.toLowerCase();
+        return terms.every((word) => haystack.includes(word));
+      })
+    : [];
   if (matches.length !== 1)
     return {
       error: matches.length

@@ -12,7 +12,9 @@
     "test": "npm run test --workspace backend",
     "db:generate": "npm run db:generate --workspace backend",
     "db:migrate": "npm run db:migrate --workspace backend",
-    "db:seed": "npm run db:seed --workspace backend"
+    "db:seed": "npm run db:seed --workspace backend",
+    "db:local:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local-db.ps1",
+    "db:supabase:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-supabase.ps1"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

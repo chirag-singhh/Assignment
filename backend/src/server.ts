@@ -5,6 +5,9 @@ import express from "express";
 import { chatRouter } from "./routes/chat.js";
 import { propertiesRouter } from "./routes/properties.js";
 import { adminRouter } from "./routes/admin.js";
+import { usersRouter } from "./routes/users.js";
+import { authRouter } from "./routes/auth.js";
+import { requireUserPassword } from "./middleware/userAuth.js";
 import { errorHandler } from "./utils/errors.js";
 
 dotenv.config({ path: fileURLToPath(new URL("../../.env", import.meta.url)) });
@@ -18,9 +21,11 @@ app.use(express.json({ limit: "64kb" }));
 app.get("/health", (_request, response) => {
   response.json({ status: "ok" });
 });
-app.use("/api/chat", chatRouter);
-app.use("/api/properties", propertiesRouter);
-app.use("/api/admin", adminRouter);
+app.use("/api/auth", authRouter);
+app.use("/api/chat", requireUserPassword, chatRouter);
+app.use("/api/users", requireUserPassword, usersRouter);
+app.use("/api/properties", requireUserPassword, propertiesRouter);
+app.use("/api/admin", requireUserPassword, adminRouter);
 app.use(errorHandler);
 
 app.listen(port, () => {
