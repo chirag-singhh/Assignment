@@ -28,7 +28,7 @@ Do not commit the real `.env` file. It contains the local database password and 
 10. [Backend configuration](#10-backend-configuration-and-database-files)
 11. [Backend foundation](#11-backend-foundation-files)
 12. [Services](#12-service-layer-explained)
-13. [Fast paths](#13-fast-answer-and-fast-action-code)
+13. [Fast paths](#13-fast-answer-and-write-validation-code)
 14. [AI agent](#14-ai-agent-explained)
 15. [AI tools](#15-ai-tools-explained)
 16. [API routes](#16-api-routes-explained)
@@ -72,7 +72,48 @@ A business administrator can:
 - inspect tool inputs, outputs, and execution time;
 - see conversations that contain repeated errors.
 
-The application uses deterministic TypeScript code for common questions and clear property changes. OpenRouter is used for questions that require flexible language reasoning. This design makes common operations fast and keeps database changes validated.
+The application uses deterministic TypeScript code for common read questions. OpenRouter interprets every chat-based property addition and update, then validated backend tools perform the database operation.
+
+### Quick performance summary
+
+| Request type | Typical response time |
+| --- | --- |
+| Health check and login | Under 1 second |
+| Common portfolio calculation | About 0.2–2 seconds |
+| AI property addition or update | About 1–3 seconds when the provider responds normally |
+| Open-ended AI analysis | About 3–20 seconds |
+| Render cold start | May take considerably longer |
+
+These are typical observations, not guaranteed limits. AI latency depends on OpenRouter and its selected model. An always-on Render instance and a low-latency tool-capable model provide more consistent performance.
+
+### Agent operations
+
+| Operation | Implementation | What it does |
+| --- | --- | --- |
+| Portfolio summary | `get_portfolio` | Returns profile, property count, owned value, rent, yield, occupancy, and exposure. |
+| Property search | `search_properties` | Filters by location, type, value, or description. |
+| Portfolio calculations | Calculation services | Calculates owned value, rent, yield, occupancy, and highest-value or highest-rent holdings. |
+| Property comparison | `compare_property_types` | Compares residential, commercial, retail, and office holdings. |
+| Highest rent | `get_highest_rent_property` | Finds the holding with the highest owned annual rent. |
+| Add property | `add_property` | Uses AI to collect every required field, validates the data, and saves it. |
+| Update property | `update_property` | Uses AI to identify one property, validates requested changes, and saves them. |
+| Hypothetical exclusion | `run_portfolio_scenario` | Calculates the effect of excluding a property without changing the database. |
+| Risk analysis | Fast calculation path | Detects geographic, property-type, vacancy, and single-asset concentration. |
+| Audit history | Conversations and `ToolLog` | Stores messages, tool calls, results, timings, and provider failures. |
+
+The agent asks for missing information before a write and asks for a more specific location when several properties match. Internal property IDs stay hidden in customer-facing replies. All tools are restricted to the selected user's portfolio.
+
+The agent does not delete properties, retrieve live market listings, invent missing financial data, calculate appreciation without purchase data, move records between users, or expose internal IDs and environment secrets.
+
+### Render keep-alive job
+
+The deployed system uses an external cron or uptime job that sends this request every five minutes:
+
+```text
+GET https://assignment-pvzb.onrender.com/health
+```
+
+This periodic health request keeps the Render backend active and reduces cold-start delays. The job calls only the public health endpoint; it does not send passwords, portfolio information, or OpenRouter requests. If the URL changes, update the cron target to the new Render hostname.
 
 ---
 
@@ -124,7 +165,7 @@ flowchart LR
     Admin[Business admin] --> Browser
     Browser -->|HTTP JSON| API[Express API<br/>localhost:5000]
     API --> Routes[Users, chat, properties,<br/>and admin routes]
-    Routes --> Fast[Fast answers and actions]
+    Routes --> Fast[Fast read answers]
     Routes --> Agent[Portfolio AI agent]
     Fast --> Services[Portfolio and property services]
     Agent --> Services
@@ -1431,7 +1472,7 @@ Extracts `userId` and puts the remaining fields into `input`.
 
 ### Regular expression
 
-Patterns between `/.../i` match text. The `i` flag means case-insensitive. Fast action patterns are deliberately narrow so unclear language goes to the model rather than causing an unsafe write.
+Patterns between `/.../i` match text. The `i` flag means case-insensitive. They are used for safe read routing and INR validation; chat-based additions and updates are interpreted by the tool-calling model.
 
 ---
 
@@ -1467,7 +1508,7 @@ Remember the project as six connected ideas:
 2. **Express owns all HTTP entry points.**
 3. **Zod rejects invalid data.**
 4. **Services own database access and portfolio math.**
-5. **Fast paths handle clear operations; OpenRouter handles flexible language.**
+5. **Fast paths handle common reads; OpenRouter interprets additions, updates, and flexible language.**
 6. **Prisma stores the result and tool history in PostgreSQL.**
 
 When debugging, follow one request through those layers in order. Check the browser state, network request, route, validation, service, Prisma query, stored record, and final response. That approach works for almost every issue in this application.
