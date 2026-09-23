@@ -8,11 +8,16 @@ export function excludePropertyScenario(
   properties: PortfolioProperty[],
   query: string,
 ) {
+  const exactId = properties.find(
+    (property) => property.id.toLowerCase() === query.trim().toLowerCase(),
+  );
   const terms = query
     .toLowerCase()
     .split(/\s+/)
     .filter((word) => word && !["property", "my", "the"].includes(word));
-  const matches = terms.length
+  const matches = exactId
+    ? [exactId]
+    : terms.length
     ? properties.filter((property) => {
         const haystack =
           `${property.id} ${property.location} ${property.propertyType} ${property.subType ?? ""}`.toLowerCase();
@@ -22,7 +27,7 @@ export function excludePropertyScenario(
   if (matches.length !== 1)
     return {
       error: matches.length
-        ? "More than one property matches. Use a property ID."
+        ? "More than one property matches. Provide a more specific location or description."
         : `No property matches \"${query}\".`,
       matches: matches.map((p) => ({ id: p.id, location: p.location })),
     };

@@ -45,6 +45,10 @@ it("answers common questions from owned values and handles punctuation", () => {
   expect(
     fastAnswer("What if I exclude the Bandra property?", properties)?.answer,
   ).toContain("₹3 crore");
+  const topScenario = fastAnswer("hello tell me what if i remove my top property", properties)?.answer;
+  expect(topScenario).toContain("Pune");
+  expect(topScenario).toContain("₹1 crore");
+  expect(topScenario).toContain("database was not changed");
   expect(
     fastAnswer(
       "Compare my retail and office properties by value and rental yield.",

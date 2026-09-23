@@ -54,7 +54,9 @@ export function fastAnswer(
     .toLowerCase()
     .replace(/[?.!]+$/, "");
   // Leave writes and mixed requests to the agent so no action is silently skipped.
+  const isHypothetical = /\bwhat (?:if|happens if)\b|\bsuppose\b/.test(question);
   if (
+    !isHypothetical &&
     /\b(add|create|update|change|edit|delete|remove|set|save)\b/.test(question)
   )
     return null;
@@ -197,10 +199,17 @@ export function fastAnswer(
   }
 
   const scenario = question.match(
-    /^what if i exclude (?:the\s+)?(.+?)(?:\s+property)?$/,
+    /\bwhat (?:if|happens if)\s+i\s+(?:exclude|remove)\s+(?:(?:the|my)\s+)?(.+?)(?:\s+property)?$/,
   );
   if (scenario) {
-    const result = excludePropertyScenario(properties, scenario[1]);
+    const requested = scenario[1].trim();
+    const topProperty = /^(?:top|highest(?:[- ]value)?|most valuable)$/.test(requested)
+      ? getPortfolioSummary(properties).highestValueProperty
+      : null;
+    if (/^(?:top|highest(?:[- ]value)?|most valuable)$/.test(requested) && !topProperty) {
+      return { intent: "exclude_scenario", answer: "Your portfolio does not contain a property to exclude." };
+    }
+    const result = excludePropertyScenario(properties, topProperty?.id ?? requested);
     if ("error" in result)
       return {
         intent: "exclude_scenario",
