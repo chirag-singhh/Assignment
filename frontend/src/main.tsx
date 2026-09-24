@@ -144,7 +144,7 @@ function Chat() {
         {busy && <div className="message-row assistant"><div className="message-avatar"><Icon name="spark"/></div><article className="thinking"><span/><span/><span/></article></div>}
       </div>
       {error && <p className="error" role="alert">{error}</p>}
-      <div className="composer"><textarea aria-label="Message" rows={1} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} placeholder="Ask anything about this portfolio…"/><button className="send-button" aria-label="Send message" onClick={() => send()} disabled={busy || !userId || !text.trim()}><Icon name="send"/></button></div>
+      <div className="composer"><textarea aria-label="Message" rows={1} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} placeholder="Ask about this portfolio…"/><button className="send-button" aria-label="Send message" onClick={() => send()} disabled={busy || !userId || !text.trim()}><Icon name="send"/></button></div>
       <p className="composer-note">Enter to send · Shift + Enter for a new line</p>
     </section>
   </main>;
