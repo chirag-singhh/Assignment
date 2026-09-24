@@ -1,11 +1,9 @@
-import { FormEvent, StrictMode, useEffect, useRef, useState } from "react";
+import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import "./styles.css";
 
 const api = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
-const USER_SESSION_KEY = "portfolio_user_password";
-const ADMIN_SESSION_KEY = "portfolio_admin_password";
 
 type User = { id: string; name: string; city?: string; _count?: { properties: number; conversations: number } };
 type Message = { id?: string; role: string; content: string; createdAt?: string };
@@ -28,8 +26,6 @@ function plainTextPreview(content: string) {
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  const userPassword = sessionStorage.getItem(USER_SESSION_KEY);
-  if (userPassword) headers.set("x-user-password", userPassword);
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   let response: Response;
   try {
@@ -58,7 +54,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-function Icon({ name }: { name: "building" | "chat" | "briefcase" | "plus" | "send" | "refresh" | "lock" | "logout" | "spark" }) {
+function Icon({ name }: { name: "building" | "chat" | "briefcase" | "plus" | "send" | "refresh" | "spark" }) {
   const paths = {
     building: <><path d="M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/><path d="M8 7h4M8 11h4M8 15h4M2 21h20M16 9h2a2 2 0 0 1 2 2v10"/></>,
     chat: <><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8M8 13h5"/></>,
@@ -66,8 +62,6 @@ function Icon({ name }: { name: "building" | "chat" | "briefcase" | "plus" | "se
     plus: <><path d="M12 5v14M5 12h14"/></>,
     send: <><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></>,
     refresh: <><path d="M20 6v5h-5M4 18v-5h5"/><path d="M18.5 9A7 7 0 0 0 6 6.5L4 11M5.5 15A7 7 0 0 0 18 17.5l2-4.5"/></>,
-    lock: <><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></>,
-    logout: <><path d="M10 17l5-5-5-5M15 12H3M15 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/></>,
     spark: <><path d="m12 3-1.2 3.8L7 8l3.8 1.2L12 13l1.2-3.8L17 8l-3.8-1.2Z"/><path d="m5 14-.8 2.2L2 17l2.2.8L5 20l.8-2.2L8 17l-2.2-.8Z"/></>,
   };
   return <svg className="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
@@ -156,14 +150,14 @@ function Chat() {
   </main>;
 }
 
-function Admin({ password, onLogout }: { password: string; onLogout: () => void }) {
+function Admin() {
   const [users, setUsers] = useState<User[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [attention, setAttention] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Conversation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const adminGet = <T,>(path: string) => requestJson<T>(path, { headers: { "x-admin-password": password } });
+  const adminGet = <T,>(path: string) => requestJson<T>(path);
   async function refresh() {
     setLoading(true);
     try {
@@ -179,7 +173,7 @@ function Admin({ password, onLogout }: { password: string; onLogout: () => void 
   }
   const toolCalls = conversations.reduce((sum, item) => sum + (item._count?.toolLogs ?? 0), 0);
   return <main className="app-shell admin-shell">
-    <section className="admin-heading"><div><span className="eyebrow"><Icon name="briefcase"/>Operations center</span><h1>Business overview</h1><p>Monitor usage, agent activity, and conversations that need review.</p></div><div className="admin-actions"><button className="button secondary" onClick={refresh} disabled={loading}><Icon name="refresh"/>{loading ? "Refreshing" : "Refresh"}</button><button className="button ghost" onClick={onLogout}><Icon name="logout"/>Lock</button></div></section>
+    <section className="admin-heading"><div><span className="eyebrow"><Icon name="briefcase"/>Operations center</span><h1>Business overview</h1><p>Monitor usage, agent activity, and conversations that need review.</p></div><div className="admin-actions"><button className="button secondary" onClick={refresh} disabled={loading}><Icon name="refresh"/>{loading ? "Refreshing" : "Refresh"}</button></div></section>
     {error && <p className="error" role="alert">{error}</p>}
     <section className="stats-grid">
       <div className="stat-card"><div className="stat-icon blue"><Icon name="building"/></div><div><span>Portfolio users</span><strong>{users.length}</strong><small>Active profiles</small></div></div>
@@ -195,44 +189,9 @@ function Admin({ password, onLogout }: { password: string; onLogout: () => void 
   </main>;
 }
 
-function AdminLogin({ onSuccess, onCancel }: { onSuccess: (password: string) => void; onCancel: () => void }) {
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  async function submit(event: FormEvent) {
-    event.preventDefault(); if (!password || busy) return; setBusy(true); setError("");
-    try { await requestJson("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) }); onSuccess(password); }
-    catch (e) { setError(e instanceof Error ? e.message : "Access denied."); setPassword(""); }
-    finally { setBusy(false); }
-  }
-  return <div className="modal-backdrop"><form className="login-card" onSubmit={submit}><div className="login-icon"><Icon name="lock"/></div><span className="eyebrow">Restricted access</span><h1>Business dashboard</h1><p>Enter the administrator password to view conversations and operational data.</p><label htmlFor="admin-password">Password</label><input id="admin-password" type="password" autoFocus autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter password"/>{error && <p className="error compact" role="alert">{error}</p>}<button className="button primary full" type="submit" disabled={busy || !password}>{busy ? "Verifying…" : "Continue securely"}</button><button className="button ghost full" type="button" onClick={onCancel}>Back to portfolio</button><small><Icon name="lock"/>Protected business information</small></form></div>;
-}
-
-function UserLogin({ onSuccess }: { onSuccess: (password: string) => void }) {
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  async function submit(event: FormEvent) {
-    event.preventDefault(); if (!password || busy) return; setBusy(true); setError("");
-    try { await requestJson("/api/auth/user-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) }); onSuccess(password); }
-    catch (e) { setError(e instanceof Error ? e.message : "Access denied."); setPassword(""); }
-    finally { setBusy(false); }
-  }
-  return <div className="modal-backdrop user-login-backdrop"><form className="login-card" onSubmit={submit}><div className="login-icon"><Icon name="building"/></div><span className="eyebrow">Secure portfolio access</span><h1>Welcome to EstateIQ</h1><p>Enter the portfolio password to access user portfolios and the AI analyst.</p><label htmlFor="user-password">Password</label><input id="user-password" type="password" autoFocus autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter password"/>{error && <p className="error compact" role="alert">{error}</p>}<button className="button primary full" type="submit" disabled={busy || !password}>{busy ? "Verifying…" : "Open portfolio"}</button><small><Icon name="lock"/>Protected portfolio information</small></form></div>;
-}
-
 function App() {
   const [page, setPage] = useState<"chat" | "admin">("chat");
-  const [userPassword, setUserPassword] = useState(() => sessionStorage.getItem(USER_SESSION_KEY) ?? "");
-  const [adminPassword, setAdminPassword] = useState(() => sessionStorage.getItem(ADMIN_SESSION_KEY) ?? "");
-  const [showLogin, setShowLogin] = useState(false);
-  function openAdmin() { if (adminPassword) setPage("admin"); else setShowLogin(true); }
-  function unlock(password: string) { sessionStorage.setItem(ADMIN_SESSION_KEY, password); setAdminPassword(password); setShowLogin(false); setPage("admin"); }
-  function logout() { sessionStorage.removeItem(ADMIN_SESSION_KEY); setAdminPassword(""); setPage("chat"); }
-  function unlockUser(password: string) { sessionStorage.setItem(USER_SESSION_KEY, password); setUserPassword(password); }
-  function lockUser() { sessionStorage.removeItem(USER_SESSION_KEY); sessionStorage.removeItem(ADMIN_SESSION_KEY); setUserPassword(""); setAdminPassword(""); setShowLogin(false); setPage("chat"); }
-  if (!userPassword) return <><nav className="topbar"><button className="brand"><span className="brand-mark"><Icon name="building"/></span><span><strong>EstateIQ</strong><small>Portfolio intelligence</small></span></button><span className="locked-label"><Icon name="lock"/>Locked</span></nav><UserLogin onSuccess={unlockUser}/></>;
-  return <><nav className="topbar"><button className="brand" onClick={() => setPage("chat")}><span className="brand-mark"><Icon name="building"/></span><span><strong>EstateIQ</strong><small>Portfolio intelligence</small></span></button><div className="nav-tabs"><button className={page === "chat" ? "active" : ""} onClick={() => setPage("chat")}><Icon name="chat"/>Portfolio AI</button><button className={page === "admin" ? "active" : ""} onClick={openAdmin}><Icon name={adminPassword ? "briefcase" : "lock"}/>Business</button><button onClick={lockUser}><Icon name="logout"/>Lock</button></div></nav>{page === "chat" ? <Chat/> : <Admin password={adminPassword} onLogout={logout}/>} {showLogin && <AdminLogin onSuccess={unlock} onCancel={() => setShowLogin(false)}/>}</>;
+  return <><nav className="topbar"><button className="brand" onClick={() => setPage("chat")}><span className="brand-mark"><Icon name="building"/></span><span><strong>EstateIQ</strong><small>Portfolio intelligence</small></span></button><div className="nav-tabs"><button className={page === "chat" ? "active" : ""} onClick={() => setPage("chat")}><Icon name="chat"/>Portfolio AI</button><button className={page === "admin" ? "active" : ""} onClick={() => setPage("admin")}><Icon name="briefcase"/>Business</button></div></nav>{page === "chat" ? <Chat/> : <Admin/>}</>;
 }
 
 createRoot(document.getElementById("root")!).render(<StrictMode><App/></StrictMode>);

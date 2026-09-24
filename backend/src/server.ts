@@ -7,8 +7,6 @@ import { chatRouter } from "./routes/chat.js";
 import { propertiesRouter } from "./routes/properties.js";
 import { adminRouter } from "./routes/admin.js";
 import { usersRouter } from "./routes/users.js";
-import { authRouter } from "./routes/auth.js";
-import { requireUserPassword } from "./middleware/userAuth.js";
 import { errorHandler } from "./utils/errors.js";
 import { prisma } from "./db/prisma.js";
 
@@ -44,11 +42,10 @@ app.use(express.json({ limit: "64kb" }));
 app.get("/health", (_request, response) => {
   response.json({ status: "ok", uptimeSeconds: Math.round(process.uptime()) });
 });
-app.use("/api/auth", authRouter);
-app.use("/api/chat", requireUserPassword, chatRouter);
-app.use("/api/users", requireUserPassword, usersRouter);
-app.use("/api/properties", requireUserPassword, propertiesRouter);
-app.use("/api/admin", requireUserPassword, adminRouter);
+app.use("/api/chat", chatRouter);
+app.use("/api/users", usersRouter);
+app.use("/api/properties", propertiesRouter);
+app.use("/api/admin", adminRouter);
 app.use("/api", (_request, response) => {
   response.status(404).json({ error: "API route not found." });
 });

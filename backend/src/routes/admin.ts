@@ -1,21 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../db/prisma.js";
-import { AppError } from "../utils/errors.js";
 export const adminRouter = Router();
-
-function passwordIsValid(value: unknown) {
-  return typeof value === "string" && value === (process.env.ADMIN_PASSWORD ?? "1234");
-}
-
-adminRouter.post("/login", (req, res, next) => {
-  if (!passwordIsValid(req.body?.password)) return next(new AppError(401, "Incorrect business password."));
-  res.json({ authenticated: true });
-});
-
-adminRouter.use((req, _res, next) => {
-  if (!passwordIsValid(req.header("x-admin-password"))) return next(new AppError(401, "Business authentication required."));
-  next();
-});
 adminRouter.get("/users", async (_req, res, next) => {
   try {
     const users = await prisma.user.findMany({

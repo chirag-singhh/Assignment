@@ -24,7 +24,3 @@ services:
         value: "20000"
       - key: MODEL_MAX_RETRIES
         value: "0"
-      - key: USER_PASSWORD
-        value: "1234"
-      - key: ADMIN_PASSWORD
-        value: "1234"

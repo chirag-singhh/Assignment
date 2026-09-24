@@ -66,7 +66,7 @@ A user can:
 
 A business administrator can:
 
-- enter the business password;
+- open the Business dashboard directly;
 - see users and conversation counts;
 - inspect every saved message;
 - inspect tool inputs, outputs, and execution time;
@@ -318,7 +318,7 @@ Open:
 - frontend: `http://localhost:5173`
 - backend health check: `http://localhost:5000/health`
 
-The Portfolio AI login uses `USER_PASSWORD`, and the Business page additionally uses `ADMIN_PASSWORD`. The development value requested for both is `1234`.
+The Portfolio AI and Business dashboard open directly without an application password.
 
 ### Build and test
 
@@ -536,8 +536,6 @@ This safe template shows the required variable names:
 - `DIRECT_URL`: migration connection.
 - `OPENROUTER_API_KEY`: private model credential.
 - `OPENROUTER_MODEL`: selected OpenRouter model.
-- `USER_PASSWORD`: protects the Portfolio AI screen and portfolio APIs.
-- `ADMIN_PASSWORD`: protects admin routes.
 - `PORT`: backend port.
 - `CORS_ORIGIN`: browser origin accepted by Express.
 - `VITE_API_BASE_URL`: optional frontend API base URL.
@@ -645,9 +643,8 @@ Execution order:
 3. Choose `PORT`, defaulting to `5000`.
 4. Enable CORS for the configured frontend origin.
 5. Enable JSON body parsing with a 64 KB limit.
-6. Register `/health` and the user-login route.
-7. Protect portfolio routes with `requireUserPassword`.
-8. Mount the chat, user, property, and admin routers.
+6. Register `/health`.
+7. Mount the chat, user, property, and admin routers.
 9. Register the central error handler last.
 10. Begin listening for requests.
 
@@ -893,7 +890,7 @@ Every user receives the same tool names. The bound `context.userId` changes whic
 
 ### `backend/src/routes/users.ts`
 
-`POST /api/auth/user-login` validates the Portfolio AI password. `GET /api/users` requires the `x-user-password` header and returns only safe selector fields: ID, name, and city.
+`GET /api/users` is public within the deployed application and returns the selector fields ID, name, and city.
 
 ### `backend/src/routes/properties.ts`
 
@@ -949,9 +946,7 @@ The route:
 
 ### `backend/src/routes/admin.ts`
 
-`POST /api/admin/login` checks the submitted password. All later admin routes require the same value in the `x-admin-password` header.
-
-Protected endpoints return:
+The Business dashboard routes open without an application password. Admin endpoints return:
 
 - users and their record counts;
 - conversation summaries;
@@ -959,7 +954,7 @@ Protected endpoints return:
 - the most recent 200 tool logs;
 - conversations that need attention.
 
-The browser stores the password in `sessionStorage`, which is cleared when the tab session ends or the user presses Lock. For a larger production system, replace this shared password with user accounts, password hashing, sessions, roles, and audit events.
+This password-free setup is intended for the assignment demonstration. For a public system containing real customer information, add authenticated accounts, secure sessions, roles, and audit events.
 
 ---
 
@@ -1046,15 +1041,11 @@ The `send` function performs an optimistic update: it immediately shows the user
 
 #### `Admin`
 
-This component loads three protected resources in parallel with `Promise.all`: users, conversations, and attention items. It calculates the total tool count, renders dashboard cards and a table, and opens a detail modal for one conversation.
-
-#### `AdminLogin`
-
-This controlled form submits the password to `/api/admin/login`. It shows an error for a failed login and passes the successful password to `App`.
+This component loads users, conversations, and attention items in parallel with `Promise.all`. It calculates the total tool count, renders dashboard cards and a table, and opens a detail modal for one conversation.
 
 #### `App`
 
-This top-level component first requires the Portfolio AI password, then switches between chat and admin pages. It stores both demo passwords in `sessionStorage`, opens the separate Business login when needed, and clears both sessions with the main Lock button.
+This top-level component switches directly between the Portfolio AI and Business pages without a login modal or password session.
 
 #### Final `createRoot`
 
@@ -1216,11 +1207,10 @@ Invoke-RestMethod `
 
 Send the returned `conversationId` with the next message.
 
-### Protected admin request
+### Admin request
 
 ```powershell
-$headers = @{ "x-admin-password" = "1234" }
-Invoke-RestMethod http://localhost:5000/api/admin/users -Headers $headers
+Invoke-RestMethod http://localhost:5000/api/admin/users
 ```
 
 ---
@@ -1237,13 +1227,13 @@ Current safeguards include:
 - property operations include `userId`;
 - conversation reads and updates include `userId`;
 - tools receive the active user's ID from backend context;
-- admin data endpoints require the password header;
+- application routes no longer use the former shared user or admin passwords;
 - unexpected server failures return generic messages;
 - tool actions and failures are logged;
 - scenario calculations do not write data;
 - assistant Markdown is rendered without enabling raw HTML.
 
-For a public production deployment, add real authentication, password hashing, secure cookies, authorization roles, rate limiting, CSRF protection where appropriate, secret rotation, HTTPS, database backups, monitoring, and audit retention rules.
+For a public production deployment with real customer data, add authentication, secure cookies, authorization roles, rate limiting, CSRF protection where appropriate, secret rotation, HTTPS, database backups, monitoring, and audit retention rules.
 
 ---
 
